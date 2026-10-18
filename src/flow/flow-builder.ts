@@ -332,7 +332,11 @@ export class FlowBuilder {
             carried: quantity(carried),
             taken: quantity(taken),
             remaining: quantity(outgoing),
-            percent: taken.div(total).mul(rational(100n)).toLocaleString(1),
+            percent: taken
+              .div(total)
+              .mul(rational(100n))
+              .toNumber()
+              .toLocaleString(undefined, { maximumFractionDigits: 2 }),
           }),
         };
       });
