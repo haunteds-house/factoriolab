@@ -39,6 +39,18 @@ describe('box-line pinned layout', () => {
     });
   }
 
+  it('keeps material links sharing endpoints distinct for every algorithm', async () => {
+    const data = { ...flow, links: [...flow.links, { ...flow.links[0] }] };
+    for (const algorithm of ['layered', 'force', 'stress'] as const) {
+      const graph = createBoxGraph(data, algorithm, new Map(), new Map(), 1);
+      expect(new Set(graph.edges.map((e) => e.id)).size).toEqual(
+        data.links.length,
+      );
+      const result = await new ELK().layout(graph);
+      expect(result.children?.length).toEqual(flow.nodes.length);
+    }
+  });
+
   it('changes the free starting positions without disturbing pin coordinates', () => {
     const pins = new Map([['r|0', { x: 100, y: 200 }]]);
     const positions = new Map([['r|1', { x: 250, y: 300 }]]);

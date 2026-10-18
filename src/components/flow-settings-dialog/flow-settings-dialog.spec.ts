@@ -31,7 +31,7 @@ describe('FlowSettingsDialog', () => {
     ).toBeNull();
     component.apply({ diagram: FlowDiagram.BoxLine });
     fixture.detectChanges();
-    for (const key of ['gridSnap', 'compactLayout'] as const) {
+    for (const key of ['gridSnap', 'compactLayout', 'seriesRouting'] as const) {
       const control = fixture.debugElement.query(
         By.css(`[label="flowSettings.${key}"]`),
       );

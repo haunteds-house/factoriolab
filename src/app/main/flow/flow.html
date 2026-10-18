@@ -58,6 +58,22 @@
   </p>
 }
 
+@if (
+  preferencesStore.flowSettings().diagram === FlowDiagram.BoxLine &&
+  preferencesStore.flowSettings().linkText === LinkValue.Belts
+) {
+  <p class="text-sm text-gray-400">{{ 'flow.beltLinesHelp' | translate }}</p>
+}
+
+@if (
+  preferencesStore.flowSettings().diagram === FlowDiagram.BoxLine &&
+  preferencesStore.flowSettings().seriesRouting
+) {
+  <p class="text-sm text-gray-400">
+    {{ 'flow.seriesRoutingHelp' | translate }}
+  </p>
+}
+
 <div
   id="lab-flow-svg"
   class="rounded-xs flex border border-gray-700"

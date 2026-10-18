@@ -62,9 +62,9 @@ export function createBoxGraph(
           : {}),
       };
     }),
-    edges: flow.links.map((l) => ({
+    edges: flow.links.map((l, index) => ({
       ...l,
-      id: l.source + '|' + l.target,
+      id: `${l.source}|${l.target}|${index}`,
       sources: [l.source],
       targets: [l.target],
     })),

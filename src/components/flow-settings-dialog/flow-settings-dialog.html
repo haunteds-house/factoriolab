@@ -49,6 +49,13 @@
       ></lab-select>
     </lab-form-field>
     <lab-checkbox
+      label="flowSettings.seriesRouting"
+      labTooltip="flowSettings.seriesRoutingHelp"
+      labTooltipPosition="adjacent"
+      [ngModel]="editValue().seriesRouting"
+      (ngModelChange)="apply({ seriesRouting: $event })"
+    ></lab-checkbox>
+    <lab-checkbox
       label="flowSettings.gridSnap"
       labTooltip="flowSettings.gridSnapHelp"
       labTooltipPosition="adjacent"

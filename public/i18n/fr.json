@@ -204,6 +204,10 @@
   },
   "filter": "Filter",
   "flow": {
+    "seriesRoutingHelp": "Series routing carries each solid material past consumers from largest share to smallest. Each consumer takes only its required share; the remainder continues. Outputs and surplus come last. Hover a link for carried, consumed and remaining amounts. Recipe calculations are unchanged.",
+    "seriesLinkTitle": "{{item}} — carried: {{carried}}; used here: {{taken}} ({{percent}}% of the source output); continues: {{remaining}}.",
+    "beltLinesHelp": "Each line represents one whole belt; fractional requirements add another full line (2.4 → 3). Hover a link for throughput and belt count. Extremely large flows show a multiplier: ×2 means up to two belts per line. Fluids keep a single link.",
+    "beltLinesTitle": "{{count}} belts required; calculated throughput: {{throughput}} belt equivalents. Up to {{multiplier}} belts per line.",
     "clearPins": "Clear pins",
     "downloadAsJson": "Download as JSON",
     "flowSettings": "Flow settings",
@@ -216,6 +220,8 @@
     "togglePin": "Pin or unpin {{name}}"
   },
   "flowSettings": {
+    "seriesRouting": "Route materials in series",
+    "seriesRoutingHelp": "Send solid materials past consumers in descending order of output share, carrying only the remainder onward. Outputs and surplus come last. Fluids and producer recycling keep direct links. This changes the diagram, not recipe inputs or the solve.",
     "gridSnap": "Snap boxes to grid",
     "gridSnapHelp": "One grid cell equals one box. Generated layouts and dragged boxes snap to separate cells. Enabling grid aligns existing pins too.",
     "compactLayout": "Compact layout",

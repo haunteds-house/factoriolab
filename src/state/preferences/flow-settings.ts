@@ -12,6 +12,7 @@ export interface FlowSettings {
   elkAlgorithm: ElkAlgorithm;
   gridSnap: boolean;
   compactLayout: boolean;
+  seriesRouting: boolean;
 }
 
 export const initialFlowSettings: FlowSettings = {
@@ -23,4 +24,5 @@ export const initialFlowSettings: FlowSettings = {
   elkAlgorithm: 'layered',
   gridSnap: false,
   compactLayout: false,
+  seriesRouting: false,
 };

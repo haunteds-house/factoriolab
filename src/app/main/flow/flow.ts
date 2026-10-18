@@ -23,6 +23,7 @@ import { combineLatest, debounceTime, switchMap } from 'rxjs';
 import { Button } from '~/components/button/button';
 import { FlowSettingsDialog } from '~/components/flow-settings-dialog/flow-settings-dialog';
 import { Steps } from '~/components/steps/steps';
+import { beltLines } from '~/d3/box-line/belt-lines';
 import { boxEdgeLine } from '~/d3/box-line/box-line-edge';
 import {
   BoxPosition,
@@ -63,6 +64,7 @@ import { Link } from '~/flow/link';
 import { Node } from '~/flow/node';
 import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { FlowSettings } from '~/state/preferences/flow-settings';
+import { LinkValue } from '~/state/preferences/link-value';
 import { PreferencesStore } from '~/state/preferences/preferences-store';
 import { SankeyAlign } from '~/state/preferences/sankey-align';
 import { Translate } from '~/translate/translate';
@@ -113,6 +115,8 @@ export class Flow {
   protected readonly faFileArrowDown = faFileArrowDown;
   protected readonly faGear = faGear;
   protected readonly FlowSettingsDialog = FlowSettingsDialog;
+  protected readonly FlowDiagram = FlowDiagram;
+  protected readonly LinkValue = LinkValue;
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -549,9 +553,9 @@ export class Flow {
       this.currentBoxViewBox = boxViewBox(boxes);
     select(`#${SVG_ID} > *`).remove();
     const edges = flow.links.map(
-      (l): BoxEdge =>
+      (l, index): BoxEdge =>
         spread<BoxEdge>(l as unknown as BoxEdge, {
-          id: `${l.source}|${l.target}`,
+          id: `${l.source}|${l.target}|${index}`,
           sourceNode: boxes.find((b) => b.id === l.source),
           targetNode: boxes.find((b) => b.id === l.target),
         }),
@@ -603,7 +607,10 @@ export class Flow {
       .selectAll('g')
       .data(edges)
       .join('g')
-      .attr('class', 'mix-blend-multiply');
+      .attr('class', 'mix-blend-multiply')
+      .attr('data-flow-link', (e) => e.itemId ?? '')
+      .attr('data-source', (e) => e.source)
+      .attr('data-target', (e) => e.target);
 
     svg
       .append('defs')
@@ -614,8 +621,9 @@ export class Flow {
       .attr('viewBox', [0, 0, 640, 640])
       .attr('refX', 320)
       .attr('refY', 320)
-      .attr('markerWidth', 6)
-      .attr('markerHeight', 6)
+      .attr('markerUnits', 'userSpaceOnUse')
+      .attr('markerWidth', 12)
+      .attr('markerHeight', 12)
       .attr('orient', 'auto-start-reverse')
       .append('path')
       .attr(
@@ -624,11 +632,43 @@ export class Flow {
       )
       .attr('fill', (e) => e.color);
 
+    const useBeltLines = (e: BoxEdge): boolean =>
+      flowSettings.linkText === LinkValue.Belts && e.beltCount != null;
+    const beltLayouts: Record<
+      string,
+      ReturnType<typeof beltLines>
+    > = Object.fromEntries(
+      edges.filter(useBeltLines).map((e) => [e.id, beltLines(e)]),
+    );
+    const beltPath = edge
+      .filter(useBeltLines)
+      .attr('data-belt-count', (e) => num(e.beltCount))
+      .attr('data-belts-per-line', (e) => beltLayouts[e.id].multiplier)
+      .append('path')
+      .attr('data-belt-lines', '')
+      .attr('d', (e) => beltLayouts[e.id].path)
+      .attr('stroke', (e) => e.color)
+      .attr('stroke-width', (e) => beltLayouts[e.id].width);
+    edge.append('title').text((e) =>
+      [
+        e.description,
+        useBeltLines(e)
+          ? this.translate.get('flow.beltLinesTitle', {
+              count: num(e.beltCount),
+              throughput: e.text,
+              multiplier: beltLayouts[e.id].multiplier,
+            })
+          : e.text,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    );
+
     const path = edge
       .append('path')
       .attr('d', (e) => boxEdgeLine(5)(e))
       .attr('stroke', (e) => e.color)
-      .attr('stroke-width', 2)
+      .attr('stroke-width', (e) => (useBeltLines(e) ? 0 : 2))
       .attr('marker-end', (e) => `url(#arrow-${e.id})`);
     const textPath = edge
       .append('path')
@@ -650,7 +690,13 @@ export class Flow {
       .style('text-anchor', 'middle')
       .attr('href', (e) => `#${e.id}`)
       .attr('class', 'pointer-events-none')
-      .text((l) => l.text);
+      .text((e) =>
+        useBeltLines(e)
+          ? beltLayouts[e.id].multiplier > 1
+            ? `×${beltLayouts[e.id].multiplier}`
+            : ''
+          : e.text,
+      );
 
     const recordPosition = (id: string, position: BoxPosition): void => {
       this.cancelPendingLayout();
@@ -708,6 +754,7 @@ export class Flow {
               d.y = position.y;
               select(this).attr('x', d.x).attr('y', d.y);
               recordPosition(d.id, { x: d.x, y: d.y });
+              beltPath.attr('d', (e) => beltLines(e).path);
               path.attr('d', (e) => boxEdgeLine(5)(e));
               textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
             },

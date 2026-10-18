@@ -3,6 +3,7 @@ import { select } from 'd3';
 
 import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { initialFlowSettings } from '~/state/preferences/flow-settings';
+import { LinkValue } from '~/state/preferences/link-value';
 import { SankeyAlign } from '~/state/preferences/sankey-align';
 import { Mocks } from '~/tests/mocks/mocks';
 import { TestModule } from '~/tests/test-module';
@@ -223,6 +224,45 @@ describe('Flow', () => {
       dragAndDropSelector(fixture, '[data-box-node]', 15, 15);
       expect(component['svg']?.selectAll('[data-box-node]').size()).toEqual(
         mocks.flow().nodes.length,
+      );
+    });
+
+    it('draws whole belt lines only for solid links and updates their geometry when dragged', async () => {
+      const data = mocks.flow();
+      data.links = data.links.map((l, i) => ({
+        ...l,
+        beltCount: i === 0 ? 3 : i === 1 ? 8193 : undefined,
+        itemId: 'iron',
+        description: 'Iron carried: 100; used here: 60; continues: 40',
+      }));
+      await component.rebuildBoxLine(data, {
+        ...initialFlowSettings,
+        linkText: LinkValue.Belts,
+      });
+      const lanes = component['svg']?.select(
+        '[data-belt-count="3"] [data-belt-lines]',
+      );
+      expect(lanes?.attr('d').match(/M/g)?.length).toEqual(3);
+      expect(
+        component['svg']
+          ?.select('[data-belt-count="8193"]')
+          .attr('data-belts-per-line'),
+      ).toEqual('3');
+      expect(
+        component['svg']
+          ?.selectAll<SVGTextPathElement, unknown>('textPath')
+          .nodes()
+          .some((n) => n.textContent === '×3'),
+      ).toBeTrue();
+      expect(component['svg']?.select('g title').text()).toContain(
+        'Iron carried: 100',
+      );
+      const before = lanes?.attr('d');
+      dragAndDropSelector(fixture, '[data-box-node]', 100, 80);
+      expect(lanes?.attr('d')).not.toEqual(before);
+      await component.rebuildBoxLine(data, initialFlowSettings);
+      expect(component['svg']?.selectAll('[data-belt-lines]').size()).toEqual(
+        0,
       );
     });
 

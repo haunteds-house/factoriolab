@@ -4,6 +4,7 @@ import { Rational, rational } from '~/rational/rational';
 import { Step } from '~/solver/step';
 import { ObjectivesStore } from '~/state/objectives/objectives-store';
 import { ColumnsState } from '~/state/preferences/columns-state';
+import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { LinkValue } from '~/state/preferences/link-value';
 import { PreferencesState } from '~/state/preferences/preferences-state';
 import { PreferencesStore } from '~/state/preferences/preferences-store';
@@ -108,6 +109,9 @@ export class FlowBuilder {
             flow.links.push({
               source: id,
               target: `${this.recipeStepNodeType(parent)}|${parent.recipeId}`,
+              itemId: item.id,
+              share: step.parents[stepId],
+              beltCount: this.linkBelts(step, step.parents[stepId], item.stack),
               text: this.linkText(
                 stepText[step.id],
                 step.parents[stepId],
@@ -141,6 +145,9 @@ export class FlowBuilder {
           flow.links.push({
             source: id,
             target: surplusId,
+            itemId: item.id,
+            share: percent,
+            beltCount: this.linkBelts(step, percent, item.stack),
             text: this.linkText(
               stepText[step.id],
               percent,
@@ -173,6 +180,9 @@ export class FlowBuilder {
           flow.links.push({
             source: id,
             target: outputId,
+            itemId: item.id,
+            share: percent,
+            beltCount: this.linkBelts(step, percent, item.stack),
             text: this.linkText(
               stepText[step.id],
               percent,
@@ -235,6 +245,13 @@ export class FlowBuilder {
             flow.links.push({
               source: id,
               target: `i|${itemId}`,
+              itemId,
+              share: step.outputs[itemId],
+              beltCount: this.linkBelts(
+                itemStep,
+                step.outputs[itemId],
+                item.stack,
+              ),
               text: this.linkText(
                 stepText[itemStep.id],
                 step.outputs[itemId],
@@ -282,6 +299,45 @@ export class FlowBuilder {
       l.target = reSourceTargets.get(l.target) ?? l.target;
     });
 
+    if (
+      preferences.flowSettings.diagram === FlowDiagram.BoxLine &&
+      preferences.flowSettings.seriesRouting
+    ) {
+      this.routeSeries(flow, (link, carried, taken, total, itemId) => {
+        // Only known solid materials enter the routing pass below.
+        const step = stepItemMap[itemId];
+        const item = data.itemRecord[itemId];
+        const outgoing = carried.sub(taken);
+        const quantity = (share: Rational): string =>
+          `${coalesce(step.items, rational.zero).mul(share).toLocaleString(itemPrec)}${suffix}`;
+        return {
+          ...link,
+          share: carried,
+          beltCount: this.linkBelts(step, carried, item.stack),
+          text: this.linkText(
+            stepText[step.id],
+            carried,
+            preferences.flowSettings.linkText,
+            preferences.columns,
+            suffix,
+          ),
+          value: this.linkSize(
+            stepValue[step.id],
+            carried,
+            preferences.flowSettings.linkSize,
+            item.stack,
+          ),
+          description: this.translate.get('flow.seriesLinkTitle', {
+            item: item.name,
+            carried: quantity(carried),
+            taken: quantity(taken),
+            remaining: quantity(outgoing),
+            percent: taken.div(total).mul(rational(100n)).toLocaleString(1),
+          }),
+        };
+      });
+    }
+
     // Mark bidirectional nodes
     flow.links.forEach((l) => {
       if (
@@ -291,6 +347,63 @@ export class FlowBuilder {
     });
 
     return flow;
+  }
+
+  /** Rewire solid-material distribution only; solver steps and recipe consumption stay intact. */
+  private routeSeries(
+    flow: FlowData,
+    format: (
+      link: Link,
+      carried: Rational,
+      taken: Rational,
+      total: Rational,
+      itemId: string,
+    ) => Link,
+  ): void {
+    const groups = new Map<
+      string,
+      { link: Link; share: Rational; itemId: string }[]
+    >();
+    for (const link of flow.links) {
+      if (
+        link.beltCount == null ||
+        !link.itemId ||
+        !link.share?.gt(rational.zero)
+      )
+        continue;
+      const key = JSON.stringify([link.source, link.itemId]);
+      const group = groups.get(key) ?? [];
+      group.push({ link, share: link.share, itemId: link.itemId });
+      groups.set(key, group);
+    }
+    for (const group of groups.values()) {
+      // Recycling back into the producer keeps its direct connection.
+      if (
+        group.length < 2 ||
+        group.some(({ link }) => link.source === link.target)
+      )
+        continue;
+      const sink = (id: string): number =>
+        Number(id.startsWith('s|') || id.startsWith('o|'));
+      group.sort(
+        (a, b) =>
+          sink(a.link.target) - sink(b.link.target) ||
+          b.share.sub(a.share).toNumber() ||
+          a.link.target.localeCompare(b.link.target),
+      );
+      const total = group.reduce(
+        (sum, entry) => sum.add(entry.share),
+        rational.zero,
+      );
+      let carried = total;
+      let source = group[0].link.source;
+      for (const { link, share, itemId } of group) {
+        const routed = format(link, carried, share, total, itemId);
+        Object.assign(link, routed, { source });
+        source = link.target;
+        carried = carried.sub(share);
+      }
+    }
   }
 
   private stepLinkValue(step: Step, prop: LinkValue): Rational {
@@ -307,6 +420,15 @@ export class FlowBuilder {
       default:
         return step.items ?? rational.zero;
     }
+  }
+
+  private linkBelts(
+    step: Step,
+    percent: Rational,
+    stack: Rational | undefined,
+  ): number | undefined {
+    if (stack == null || step.belts == null) return undefined;
+    return step.belts.mul(percent).ceil().toNumber();
   }
 
   private linkSize(
