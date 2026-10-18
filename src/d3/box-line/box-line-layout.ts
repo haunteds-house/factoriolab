@@ -39,7 +39,7 @@ export function createBoxGraph(
   return {
     id: 'root',
     layoutOptions: {
-      'elk.algorithm': pins.size ? 'stress' : algorithm,
+      'elk.algorithm': algorithm,
       'elk.randomSeed': seed.toString(),
       ...(pins.size ? { 'elk.interactive': 'true' } : {}),
     },
@@ -57,7 +57,9 @@ export function createBoxGraph(
               y: pinned?.y ?? previous.y + jitter.y,
             }
           : {}),
-        ...(pinned ? { layoutOptions: { 'elk.stress.fixed': 'true' } } : {}),
+        ...(pinned && algorithm === 'stress'
+          ? { layoutOptions: { 'elk.stress.fixed': 'true' } }
+          : {}),
       };
     }),
     edges: flow.links.map((l) => ({
@@ -70,8 +72,9 @@ export function createBoxGraph(
 }
 
 /**
- * ELK translates connected components after layout, including fixed nodes.
- * Undo that translation per component so pin coordinates remain exact.
+ * Anchor each component after the selected algorithm runs. Stress needs only
+ * translation; other layouts blend the anchor displacements over free nodes.
+ * Rendering uses these positions for links as well as nodes.
  */
 export function restoreBoxPins(
   boxes: BoxNode[],
@@ -99,17 +102,35 @@ export function restoreBoxPins(
       component.push(record.box);
       pending.push(...record.neighbors);
     }
-    for (const anchor of component) {
-      const target = pins.get(anchor.id);
-      if (target == null) continue;
-      const dx = target.x - (anchor.x ?? 0);
-      const dy = target.y - (anchor.y ?? 0);
-      for (const node of component) {
-        const pinned = pins.get(node.id);
-        node.x = pinned?.x ?? (node.x ?? 0) + dx;
-        node.y = pinned?.y ?? (node.y ?? 0) + dy;
+    const anchors = component.flatMap((node) => {
+      const target = pins.get(node.id);
+      return target == null
+        ? []
+        : [
+            {
+              x: node.x ?? 0,
+              y: node.y ?? 0,
+              dx: target.x - (node.x ?? 0),
+              dy: target.y - (node.y ?? 0),
+            },
+          ];
+    });
+    if (!anchors.length) continue;
+    for (const node of component) {
+      const pinned = pins.get(node.id);
+      const x = node.x ?? 0;
+      const y = node.y ?? 0;
+      let weight = 0;
+      let dx = 0;
+      let dy = 0;
+      for (const anchor of anchors) {
+        const w = 1 / Math.max(1, (x - anchor.x) ** 2 + (y - anchor.y) ** 2);
+        weight += w;
+        dx += anchor.dx * w;
+        dy += anchor.dy * w;
       }
-      break;
+      node.x = pinned?.x ?? x + dx / weight;
+      node.y = pinned?.y ?? y + dy / weight;
     }
   }
 }

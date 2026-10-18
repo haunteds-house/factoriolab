@@ -16,25 +16,28 @@ describe('box-line pinned layout', () => {
     flow = TestBed.inject(Mocks).flow();
   });
 
-  it('keeps multiple pins exact through a real ELK stress layout', async () => {
-    const pins = new Map([
-      ['r|0', { x: -100, y: 50 }],
-      ['r|1', { x: 180, y: 125 }],
-    ]);
-    for (const seed of [1, 2]) {
-      const graph = createBoxGraph(flow, 'layered', new Map(), pins, seed);
-      const result = await new ELK().layout(graph);
-      const boxes = result.children as BoxNode[];
-      restoreBoxPins(boxes, flow, pins);
-      for (const [id, position] of pins) {
-        expect(boxes.find((b) => b.id === id)?.x).toEqual(position.x);
-        expect(boxes.find((b) => b.id === id)?.y).toEqual(position.y);
+  for (const algorithm of ['layered', 'force', 'stress'] as const) {
+    it(`keeps multiple pins exact through a real ELK ${algorithm} layout`, async () => {
+      const pins = new Map([
+        ['r|0', { x: -100, y: 50 }],
+        ['r|1', { x: 180, y: 125 }],
+      ]);
+      for (const seed of [1, 2]) {
+        const graph = createBoxGraph(flow, algorithm, new Map(), pins, seed);
+        expect(graph.layoutOptions?.['elk.algorithm']).toEqual(algorithm);
+        const result = await new ELK().layout(graph);
+        const boxes = result.children as BoxNode[];
+        restoreBoxPins(boxes, flow, pins);
+        for (const [id, position] of pins) {
+          expect(boxes.find((b) => b.id === id)?.x).toEqual(position.x);
+          expect(boxes.find((b) => b.id === id)?.y).toEqual(position.y);
+        }
+        expect(
+          boxes.every((b) => Number.isFinite(b.x) && Number.isFinite(b.y)),
+        ).toBeTrue();
       }
-      expect(
-        boxes.every((b) => Number.isFinite(b.x) && Number.isFinite(b.y)),
-      ).toBeTrue();
-    }
-  });
+    });
+  }
 
   it('changes the free starting positions without disturbing pin coordinates', () => {
     const pins = new Map([['r|0', { x: 100, y: 200 }]]);

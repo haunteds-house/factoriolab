@@ -97,7 +97,6 @@ export class Flow {
   );
   protected readonly layoutPending = signal(false);
   protected readonly layoutError = signal(false);
-  protected readonly FlowDiagram = FlowDiagram;
   protected readonly faArrowsRotate = faArrowsRotate;
   protected readonly faThumbtack = faThumbtack;
   protected readonly faXmark = faXmark;
@@ -141,7 +140,6 @@ export class Flow {
       this.layoutVersion++;
       this.layoutPending.set(false);
       this.layoutError.set(false);
-      select(`#${SVG_ID} > *`).remove();
       this.rebuildSankey(flowData, flowSettings);
     } else await this.rebuildBoxLine(flowData, flowSettings);
   }
@@ -176,6 +174,19 @@ export class Flow {
     this.updatePinStyles();
   }
 
+  private handleNodeClick(e: MouseEvent, d: Node): void {
+    if (e.defaultPrevented) return;
+    if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
+    else this.selectedId.set(d.stepId);
+  }
+
+  private handleNodeKeydown(e: KeyboardEvent, d: Node): void {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
+    else this.selectedId.set(d.stepId);
+  }
+
   private cancelPendingLayout(): void {
     this.layoutVersion++;
     this.layoutPending.set(false);
@@ -184,7 +195,7 @@ export class Flow {
   private updatePinStyles(): void {
     const pins = this.pinnedNodes();
     this.svg
-      ?.selectAll<SVGSVGElement, BoxNode>('[data-box-node]')
+      ?.selectAll<SVGSVGElement, BoxNode>('[data-flow-node]')
       .attr('aria-label', (d) =>
         this.pinMode()
           ? this.translate.get('flow.togglePin', { name: d.name })
@@ -199,7 +210,7 @@ export class Flow {
       )
       .attr('stroke-width', (d) => (pins.has(d.id) ? 2.5 : 1));
     this.svg
-      ?.selectAll<SVGSVGElement, BoxNode>('[data-box-node]')
+      ?.selectAll<SVGSVGElement, BoxNode>('[data-flow-node]')
       .select('[data-pin-marker]')
       .style('display', (d) => (pins.has(d.id) ? null : 'none'));
   }
@@ -213,12 +224,44 @@ export class Flow {
     layout = this.getLayout(flowSettings.sankeyAlign, width, height);
     skGraph = this.getGraph(layout, flowData);
 
+    const pins = new Map(
+      [...this.pinnedNodes()].filter(([id]) =>
+        skGraph.nodes.some((n) => n.id === id),
+      ),
+    );
+    this.pinnedNodes.set(pins);
+    const boxes = skGraph.nodes.map((n) => ({ ...n, x: n.x0, y: n.y0 }));
+    restoreBoxPins(boxes, flowData, pins);
+    this.boxPositions.clear();
+    boxes.forEach((box, index) => {
+      const n = skGraph.nodes[index];
+      const dx = num(box.x) - num(n.x0);
+      const dy = num(box.y) - num(n.y0);
+      n.x0 = num(n.x0) + dx;
+      n.x1 = num(n.x1) + dx;
+      n.y0 = num(n.y0) + dy;
+      n.y1 = num(n.y1) + dy;
+      this.boxPositions.set(n.id, { x: n.x0, y: n.y0 });
+    });
+    layout.update(skGraph);
+    const previousSvg = this.svg?.node();
+    const transform =
+      pins.size && previousSvg ? zoomTransform(previousSvg) : undefined;
+    const viewBox =
+      pins.size && previousSvg
+        ? (previousSvg.getAttribute('viewBox') ?? `0 0 ${width} ${height}`)
+        : `0 0 ${width.toString()} ${height.toString()}`;
+    select(`#${SVG_ID} > *`).remove();
     const svg = select(this.svgElement().nativeElement)
       .append('svg')
-      .attr('viewBox', `0 0 ${width.toString()} ${height.toString()}`)
+      .attr('viewBox', viewBox)
       .attr('class', 'min-h-[75dvh]');
 
-    svg.call(zoom<SVGSVGElement, unknown>().on('zoom', this.zoomHandler(svg)));
+    const zoomBehavior = zoom<SVGSVGElement, unknown>().on(
+      'zoom',
+      this.zoomHandler(svg),
+    );
+    svg.call(zoomBehavior);
 
     // Draw links (draw first so nodes are drawn over them)
     const link = svg
@@ -263,6 +306,14 @@ export class Flow {
       .text((l) => l.text);
 
     // Main node svg
+    const recordPosition = (d: SankeyNode<Node, Link>): void => {
+      this.boxPositions.set(d.id, { x: num(d.x0), y: num(d.y0) });
+      if (this.pinnedNodes().has(d.id)) {
+        const moved = new Map(this.pinnedNodes());
+        moved.set(d.id, { x: num(d.x0), y: num(d.y0) });
+        this.pinnedNodes.set(moved);
+      }
+    };
     const node = svg
       .append('g')
       .selectAll<SVGSVGElement, SankeyNode<Node, Link>>('svg')
@@ -271,7 +322,15 @@ export class Flow {
       .attr('class', 'overflow-visible')
       .attr('x', (d) => coalesce(d.x0, 0))
       .attr('y', (d) => coalesce(d.y0, 0))
-      .on('click', this.clickHandler())
+      .attr('data-flow-node', (d) => d.id)
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .on('click', (e: MouseEvent, d) => {
+        this.handleNodeClick(e, d);
+      })
+      .on('keydown', (e: KeyboardEvent, d) => {
+        this.handleNodeKeydown(e, d);
+      })
       .call(
         drag<SVGSVGElement, SankeyNode<Node, Link>>()
           .subject((d) => d as SankeyNode<Node, Link>)
@@ -287,6 +346,7 @@ export class Flow {
             const transform = `translate(${trX.toString()},${trY.toString()})`;
             select(this).attr('transform', transform);
 
+            recordPosition(d);
             layout.update(skGraph);
 
             // force an update of the path
@@ -413,7 +473,19 @@ export class Flow {
       .attr('y', (d) => this.imageOffset(d) + 32)
       .text((d) => d.text);
 
+    node
+      .append('text')
+      .attr('data-pin-marker', '')
+      .attr('class', 'pointer-events-none fill-brand-400 text-xs')
+      .attr('x', 2)
+      .attr('y', 12)
+      .text('📌');
     this.svg = svg;
+    this.updatePinStyles();
+    if (transform)
+      svg.call((s) => {
+        zoomBehavior.transform(s, transform);
+      });
   }
 
   async rebuildBoxLine(
@@ -561,19 +633,15 @@ export class Flow {
       .attr('x', (d) => coalesce(d.x, 0))
       .attr('y', (d) => coalesce(d.y, 0))
       .attr('data-box-node', (d) => d.id)
+      .attr('data-flow-node', (d) => d.id)
       .attr('role', 'button')
       .attr('tabindex', 0)
       .attr('aria-label', (d) => d.name)
       .on('click', (e: MouseEvent, d) => {
-        if (e.defaultPrevented) return;
-        if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
-        else this.selectedId.set(d.stepId);
+        this.handleNodeClick(e, d);
       })
       .on('keydown', (e: KeyboardEvent, d) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
-        else this.selectedId.set(d.stepId);
+        this.handleNodeKeydown(e, d);
       })
       .call(
         drag<SVGSVGElement, Node & ElkNode>()
@@ -719,7 +787,7 @@ export class Flow {
     width: number,
     height: number,
   ): SankeyLayout<SankeyGraphMinimal<Node, Link>, Node, Link> {
-    return sankey<Node, Link>()
+    const layout = sankey<Node, Link>()
       .nodeId((d) => d.id)
       .nodeWidth(NODE_WIDTH)
       .nodeAlign(this._alignMap[align])
@@ -727,6 +795,16 @@ export class Flow {
         [1, 5],
         [width - 1, height - 5],
       ]);
+    if (this.layoutSeed > 1) {
+      const rank = (id: string): number => {
+        let hash = this.layoutSeed * 2654435761;
+        for (const char of id)
+          hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
+        return hash >>> 0;
+      };
+      layout.nodeSort((a, b) => rank(a.id) - rank(b.id));
+    }
+    return layout;
   }
 
   private getGraph(
@@ -766,13 +844,6 @@ export class Flow {
   ): (e: { transform: string }) => void {
     return (e: { transform: string }) => {
       svg.selectAll('svg > g').attr('transform', e.transform);
-    };
-  }
-
-  private clickHandler(): (e: Event, d: { stepId: string }) => void {
-    return (e: Event, d: { stepId: string }) => {
-      if (e.defaultPrevented) return;
-      this.selectedId.set(d.stepId);
     };
   }
 }

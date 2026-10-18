@@ -3,6 +3,7 @@ import { select } from 'd3';
 
 import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { initialFlowSettings } from '~/state/preferences/flow-settings';
+import { SankeyAlign } from '~/state/preferences/sankey-align';
 import { Mocks } from '~/tests/mocks/mocks';
 import { TestModule } from '~/tests/test-module';
 import {
@@ -73,6 +74,57 @@ describe('Flow', () => {
       dragAndDropSelector(fixture, '#lab-flow-svg svg svg', 100, 200);
       assert(component['svg'] != null);
       expect(component['svg'].select('svg').attr('transform')).toBeTruthy();
+    });
+
+    for (const align of [
+      SankeyAlign.Justify,
+      SankeyAlign.Left,
+      SankeyAlign.Right,
+      SankeyAlign.Center,
+    ]) {
+      it(`pins and regenerates Sankey with ${align} alignment`, () => {
+        component.togglePinMode();
+        altClickSelector(fixture, '[data-flow-node]');
+        const id = mocks.flow().nodes[0].id;
+        expect(component['pinnedNodes']().has(id)).toBeTrue();
+        dragAndDropSelector(fixture, '[data-flow-node]', 50, 75);
+        const anchor = component['pinnedNodes']().get(id)!;
+        component['layoutSeed']++;
+        select(`#${SVG_ID} > *`).remove();
+        component.rebuildSankey(mocks.flow(), {
+          ...initialFlowSettings,
+          sankeyAlign: align,
+        });
+        expect(component['boxPositions'].get(id)).toEqual(anchor);
+        expect(
+          component['svg']?.select('[data-flow-node]').attr('aria-pressed'),
+        ).toEqual('true');
+        const graph = component['svg']!.selectAll<
+          SVGSVGElement,
+          { x0: number; x1: number; y0: number; y1: number }
+        >('[data-flow-node]').data();
+        expect(
+          graph.every((n) => [n.x0, n.x1, n.y0, n.y1].every(Number.isFinite)),
+        ).toBeTrue();
+        component.clearPins();
+        expect(component['pinnedNodes']().size).toEqual(0);
+      });
+    }
+
+    it('supports keyboard pinning and regenerates without a saved viewport', () => {
+      const node = fixture.nativeElement.querySelector(
+        '[data-flow-node]',
+      ) as SVGElement;
+      node.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true }),
+      );
+      expect(component['pinnedNodes']().has('r|0')).toBeTrue();
+      component['svg']?.attr('viewBox', null);
+      component.rebuildSankey(mocks.flow(), initialFlowSettings);
+      expect(component['svg']?.attr('viewBox')).not.toContain('NaN');
+      expect(component['boxPositions'].get('r|0')).toEqual(
+        component['pinnedNodes']().get('r|0'),
+      );
     });
 
     it('should handle zoom', () => {
