@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { select } from 'd3';
 
+import { rational } from '~/rational/rational';
 import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { initialFlowSettings } from '~/state/preferences/flow-settings';
 import { LinkValue } from '~/state/preferences/link-value';
 import { SankeyAlign } from '~/state/preferences/sankey-align';
+import { ItemId } from '~/tests/item-id';
 import { Mocks } from '~/tests/mocks/mocks';
 import { TestModule } from '~/tests/test-module';
 import {
@@ -58,6 +60,35 @@ describe('Flow', () => {
       await component.rebuildChart(flow, flowSettings);
       expect(component.rebuildBoxLine).toHaveBeenCalledWith(flow, flowSettings);
     });
+  });
+
+  it('exports the displayed series order while other views export the ordinary flow', () => {
+    const flow = mocks.flow();
+    const exportJson = spyOn(component['exporter'], 'flowToJson');
+    const route = spyOn(component['flowBuilder'], 'seriesFlow').and.returnValue(
+      flow,
+    );
+    const settings = spyOn(
+      component['preferencesStore'],
+      'flowSettings',
+    ).and.returnValue(initialFlowSettings);
+    component['exportFlow'](flow);
+    expect(route).not.toHaveBeenCalled();
+    settings.and.returnValue({
+      ...initialFlowSettings,
+      diagram: FlowDiagram.BoxLine,
+      seriesRouting: false,
+    });
+    component['exportFlow'](flow);
+    expect(route).not.toHaveBeenCalled();
+    settings.and.returnValue({
+      ...initialFlowSettings,
+      diagram: FlowDiagram.BoxLine,
+      seriesRouting: true,
+    });
+    component['exportFlow'](flow);
+    expect(route).toHaveBeenCalledWith(flow, component['boxPositions']);
+    expect(exportJson).toHaveBeenCalledWith(flow);
   });
 
   describe('rebuildSankey', () => {
@@ -264,6 +295,86 @@ describe('Flow', () => {
       expect(component['svg']?.selectAll('[data-belt-lines]').size()).toEqual(
         0,
       );
+    });
+
+    it('reroutes by actual coordinates after layout and dragging, with recalculated belts and labels', async () => {
+      const data = mocks.flow();
+      const source = data.nodes[0].id,
+        first = data.nodes[1].id,
+        second = data.nodes[2].id;
+      const settings = {
+        ...initialFlowSettings,
+        diagram: FlowDiagram.BoxLine,
+        seriesRouting: true,
+        linkText: LinkValue.Belts,
+      };
+      spyOn(
+        component['flowBuilder']['objectivesStore'],
+        'steps',
+      ).and.returnValue([
+        {
+          id: 'iron',
+          itemId: ItemId.IronPlate,
+          items: rational(100n),
+          belts: rational('2.4'),
+        },
+      ]);
+      const preferences = mocks.preferencesStore.state();
+      spyOn(
+        component['flowBuilder']['preferencesStore'],
+        'state',
+      ).and.returnValue({
+        ...preferences,
+        flowSettings: settings,
+      });
+      data.links = [
+        {
+          ...data.links[0],
+          source,
+          target: first,
+          itemId: ItemId.IronPlate,
+          share: rational('0.6'),
+          beltCount: 2,
+        },
+        {
+          ...data.links[0],
+          source,
+          target: second,
+          itemId: ItemId.IronPlate,
+          share: rational('0.4'),
+          beltCount: 1,
+        },
+      ];
+      spyOn(component['elk'], 'layout').and.resolveTo({
+        children: data.nodes.map((n, i) => ({
+          ...n,
+          x: [0, 80, 200][i],
+          y: 0,
+          width: 38,
+          height: 38,
+        })),
+        edges: [],
+        width: 300,
+        height: 100,
+      });
+      await component.rebuildBoxLine(data, settings);
+      const links = component['svg']
+        ?.selectAll<SVGGElement, unknown>('[data-flow-link]')
+        .nodes();
+      assert(links != null);
+      expect(links[0].getAttribute('data-source')).toEqual(source);
+      expect(links[0].getAttribute('data-belt-count')).toEqual('3');
+      const geometry = links[0]
+        .querySelector('[data-belt-lines]')
+        ?.getAttribute('d');
+      dragAndDropSelector(fixture, `[data-box-node="${first}"]`, 400, 0);
+      expect(links[0].getAttribute('data-source')).toEqual(second);
+      expect(links[1].getAttribute('data-source')).toEqual(source);
+      expect(links[0].getAttribute('data-belt-count')).toEqual('2');
+      expect(
+        links[0].querySelector('[data-belt-lines]')?.getAttribute('d'),
+      ).not.toEqual(geometry);
+      expect(data.links.every((l) => l.source === source)).toBeTrue();
     });
 
     it('should set selectedId when a rect is clicked', async () => {

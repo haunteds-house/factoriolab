@@ -134,6 +134,15 @@ export class Flow {
       .subscribe();
   }
 
+  protected exportFlow(flow: FlowData): void {
+    const settings = this.preferencesStore.flowSettings();
+    this.exporter.flowToJson(
+      settings.diagram === FlowDiagram.BoxLine && settings.seriesRouting
+        ? this.flowBuilder.seriesFlow(flow, this.boxPositions)
+        : flow,
+    );
+  }
+
   async rebuildChart(
     flowData: FlowData | null,
     flowSettings: FlowSettings,
@@ -552,7 +561,10 @@ export class Flow {
     if (!pins.size || this.currentBoxViewBox == null)
       this.currentBoxViewBox = boxViewBox(boxes);
     select(`#${SVG_ID} > *`).remove();
-    const edges = flow.links.map(
+    const displayedFlow = flowSettings.seriesRouting
+      ? this.flowBuilder.seriesFlow(flow, this.boxPositions)
+      : flow;
+    const edges = displayedFlow.links.map(
       (l, index): BoxEdge =>
         spread<BoxEdge>(l as unknown as BoxEdge, {
           id: `${l.source}|${l.target}|${index}`,
@@ -649,7 +661,7 @@ export class Flow {
       .attr('d', (e) => beltLayouts[e.id].path)
       .attr('stroke', (e) => e.color)
       .attr('stroke-width', (e) => beltLayouts[e.id].width);
-    edge.append('title').text((e) =>
+    const describeLink = (e: BoxEdge): string =>
       [
         e.description,
         useBeltLines(e)
@@ -661,8 +673,8 @@ export class Flow {
           : e.text,
       ]
         .filter(Boolean)
-        .join('\n'),
-    );
+        .join('\n');
+    const titles = edge.append('title').text(describeLink);
 
     const path = edge
       .append('path')
@@ -675,7 +687,13 @@ export class Flow {
       .attr('id', (e) => e.id)
       .attr('d', (e) => boxEdgeLine(0, true)(e));
 
-    svg
+    const linkLabel = (e: BoxEdge): string =>
+      useBeltLines(e)
+        ? beltLayouts[e.id].multiplier > 1
+          ? `×${beltLayouts[e.id].multiplier}`
+          : ''
+        : e.text;
+    const labels = svg
       .append('g')
       .selectAll('text')
       .data(edges)
@@ -690,13 +708,37 @@ export class Flow {
       .style('text-anchor', 'middle')
       .attr('href', (e) => `#${e.id}`)
       .attr('class', 'pointer-events-none')
-      .text((e) =>
-        useBeltLines(e)
-          ? beltLayouts[e.id].multiplier > 1
-            ? `×${beltLayouts[e.id].multiplier}`
-            : ''
-          : e.text,
-      );
+      .text(linkLabel);
+
+    const redrawLinks = (): void => {
+      if (flowSettings.seriesRouting) {
+        const routed = this.flowBuilder.seriesFlow(flow, this.boxPositions);
+        edges.forEach((edge, i) => {
+          const link = routed.links[i];
+          Object.assign(edge, link, {
+            sourceNode: boxes.find((b) => b.id === link.source),
+            targetNode: boxes.find((b) => b.id === link.target),
+          });
+        });
+      }
+      edges.filter(useBeltLines).forEach((e) => {
+        beltLayouts[e.id] = beltLines(e);
+      });
+      edge
+        .attr('data-source', (e) => e.source)
+        .attr('data-target', (e) => e.target);
+      edge
+        .filter(useBeltLines)
+        .attr('data-belt-count', (e) => num(e.beltCount))
+        .attr('data-belts-per-line', (e) => beltLayouts[e.id].multiplier);
+      beltPath
+        .attr('d', (e) => beltLayouts[e.id].path)
+        .attr('stroke-width', (e) => beltLayouts[e.id].width);
+      path.attr('d', (e) => boxEdgeLine(5)(e));
+      textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
+      labels.text(linkLabel);
+      titles.text(describeLink);
+    };
 
     const recordPosition = (id: string, position: BoxPosition): void => {
       this.cancelPendingLayout();
@@ -754,9 +796,7 @@ export class Flow {
               d.y = position.y;
               select(this).attr('x', d.x).attr('y', d.y);
               recordPosition(d.id, { x: d.x, y: d.y });
-              beltPath.attr('d', (e) => beltLines(e).path);
-              path.attr('d', (e) => boxEdgeLine(5)(e));
-              textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
+              redrawLinks();
             },
           ),
       );

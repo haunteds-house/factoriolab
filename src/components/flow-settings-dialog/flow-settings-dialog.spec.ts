@@ -26,6 +26,8 @@ describe('FlowSettingsDialog', () => {
   });
 
   it('offers independent grid and compact controls for Box-line and saves them', () => {
+    component.apply({ diagram: FlowDiagram.Sankey });
+    fixture.detectChanges();
     expect(
       fixture.debugElement.query(By.css('[label="flowSettings.gridSnap"]')),
     ).toBeNull();

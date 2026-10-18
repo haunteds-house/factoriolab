@@ -231,7 +231,7 @@ describe('FlowService', () => {
         },
       ];
     }
-    it('routes full output to the largest consumer, then the exact remainder onward', () => {
+    it('falls back to output share without positions and preserves exact remainders', () => {
       const links = distribution();
       const carried: string[] = [],
         taken: string[] = [];
@@ -261,6 +261,54 @@ describe('FlowService', () => {
         '0.1',
       ]);
     });
+    it('visits the nearest consumer ahead of a larger, distant consumer, keeping sinks last', () => {
+      const links = distribution();
+      const carried: string[] = [];
+      service['routeSeries'](
+        { nodes: [], links },
+        (l, remaining) => {
+          carried.push(remaining.toString());
+          return { ...l };
+        },
+        new Map([
+          ['furnaces', { x: 0, y: 0 }],
+          ['circuits', { x: 10, y: 0 }],
+          ['steel', { x: 100, y: 0 }],
+          ['o|iron', { x: 1, y: 0 }],
+        ]),
+      );
+      expect(links.find((l) => l.target === 'circuits')?.source).toEqual(
+        'furnaces',
+      );
+      expect(links.find((l) => l.target === 'steel')?.source).toEqual(
+        'circuits',
+      );
+      expect(links.find((l) => l.target === 'o|iron')?.source).toEqual('steel');
+      expect(carried).toEqual(['1', '0.7', '0.1']);
+    });
+
+    it('measures each next hop from the last consumer and uses share to break equal-distance ties', () => {
+      const base = distribution()[0];
+      const links = [
+        { ...base, target: 'a', share: rational('0.4') },
+        { ...base, target: 'b', share: rational('0.3') },
+        { ...base, target: 'c', share: rational('0.3') },
+      ];
+      service['routeSeries'](
+        { nodes: [], links },
+        (l) => ({ ...l }),
+        new Map([
+          ['furnaces', { x: 0, y: 0 }],
+          ['a', { x: 10, y: 0 }],
+          ['b', { x: 0, y: 10 }],
+          ['c', { x: 20, y: 0 }],
+        ]),
+      );
+      expect(links.find((l) => l.target === 'a')?.source).toEqual('furnaces');
+      expect(links.find((l) => l.target === 'c')?.source).toEqual('a');
+      expect(links.find((l) => l.target === 'b')?.source).toEqual('c');
+    });
+
     it('keeps separate materials, deterministic ties, and surplus last', () => {
       const base = distribution()[0];
       const links = [
@@ -309,21 +357,36 @@ describe('FlowService', () => {
         { id: 'circuits', recipeId: RecipeId.ElectronicCircuit },
       ];
       const original = splitSteps.map((s) => ({ ...s }));
-      const result = service['buildGraph'](
+      const preferences = {
+        ...initialPreferencesState,
+        flowSettings: {
+          ...initialFlowSettings,
+          diagram: FlowDiagram.BoxLine,
+          seriesRouting: true,
+          linkText: LinkValue.Belts,
+        },
+      };
+      const base = service['buildGraph'](
         splitSteps,
         '/m',
         mocks.settingsStore.settings(),
-        {
-          ...initialPreferencesState,
-          flowSettings: {
-            ...initialFlowSettings,
-            diagram: FlowDiagram.BoxLine,
-            seriesRouting: true,
-            linkText: LinkValue.Belts,
-          },
-        },
+        preferences,
         mocks.recipesStore.adjustedDataset(),
       );
+      expect(base.links.every((l) => l.description == null)).toBeTrue();
+      spyOn(service['objectivesStore'], 'steps').and.returnValue(splitSteps);
+      spyOn(service['preferencesStore'], 'state').and.returnValue(preferences);
+      const result = service.seriesFlow(
+        base,
+        new Map([
+          ['r|iron-plate', { x: 0, y: 0 }],
+          ['r|steel-plate', { x: 40, y: 0 }],
+          ['r|electronic-circuit', { x: 100, y: 0 }],
+        ]),
+      );
+      expect(
+        base.links.find((l) => l.target === 'r|electronic-circuit')?.source,
+      ).toEqual('r|iron-plate');
       expect(result.links.some((l) => l.description != null)).toBeTrue();
       expect(result.links.some((l) => l.beltCount === 3)).toBeTrue();
       expect(result.links.every((l) => Number.isFinite(l.value))).toBeTrue();

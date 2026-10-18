@@ -1,10 +1,10 @@
 import { computed, inject, Service } from '@angular/core';
 
+import { BoxPosition } from '~/d3/box-line/box-line-layout';
 import { Rational, rational } from '~/rational/rational';
 import { Step } from '~/solver/step';
 import { ObjectivesStore } from '~/state/objectives/objectives-store';
 import { ColumnsState } from '~/state/preferences/columns-state';
-import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { LinkValue } from '~/state/preferences/link-value';
 import { PreferencesState } from '~/state/preferences/preferences-state';
 import { PreferencesStore } from '~/state/preferences/preferences-store';
@@ -299,11 +299,40 @@ export class FlowBuilder {
       l.target = reSourceTargets.get(l.target) ?? l.target;
     });
 
-    if (
-      preferences.flowSettings.diagram === FlowDiagram.BoxLine &&
-      preferences.flowSettings.seriesRouting
-    ) {
-      this.routeSeries(flow, (link, carried, taken, total, itemId) => {
+    // Mark bidirectional nodes
+    flow.links.forEach((l) => {
+      if (
+        flow.links.some((m) => l.target === m.source && l.source === m.target)
+      )
+        l.bidi = true;
+    });
+
+    return flow;
+  }
+
+  /** Route only after layout, using the same coordinates the user sees. */
+  seriesFlow(
+    flow: FlowData,
+    positions: ReadonlyMap<string, BoxPosition>,
+  ): FlowData {
+    const preferences = this.preferencesStore.state();
+    const settings = this.settingsStore.settings();
+    const data = this.recipesStore.adjustedDataset();
+    const stepItemMap: Record<string, Step> = {};
+    for (const step of this.objectivesStore.steps()) {
+      if (step.itemId) stepItemMap[step.itemId] = step;
+    }
+    const itemPrec = preferences.columns.items.precision;
+    const suffix = this.translate.get(
+      displayRateInfo[settings.displayRate].suffix,
+    );
+    const result: FlowData = {
+      ...flow,
+      links: flow.links.map((l) => ({ ...l, bidi: undefined })),
+    };
+    this.routeSeries(
+      result,
+      (link, carried, taken, total, itemId) => {
         // Only known solid materials enter the routing pass below.
         const step = stepItemMap[itemId];
         const item = data.itemRecord[itemId];
@@ -315,14 +344,14 @@ export class FlowBuilder {
           share: carried,
           beltCount: this.linkBelts(step, carried, item.stack),
           text: this.linkText(
-            stepText[step.id],
+            this.stepLinkValue(step, preferences.flowSettings.linkText),
             carried,
             preferences.flowSettings.linkText,
             preferences.columns,
             suffix,
           ),
           value: this.linkSize(
-            stepValue[step.id],
+            this.stepLinkValue(step, preferences.flowSettings.linkSize),
             carried,
             preferences.flowSettings.linkSize,
             item.stack,
@@ -339,18 +368,16 @@ export class FlowBuilder {
               .toLocaleString(undefined, { maximumFractionDigits: 2 }),
           }),
         };
-      });
-    }
-
-    // Mark bidirectional nodes
-    flow.links.forEach((l) => {
-      if (
-        flow.links.some((m) => l.target === m.source && l.source === m.target)
-      )
-        l.bidi = true;
+      },
+      positions,
+    );
+    result.links.forEach((l) => {
+      l.bidi =
+        result.links.some(
+          (m) => l.target === m.source && l.source === m.target,
+        ) || undefined;
     });
-
-    return flow;
+    return result;
   }
 
   /** Rewire solid-material distribution only; solver steps and recipe consumption stay intact. */
@@ -363,6 +390,7 @@ export class FlowBuilder {
       total: Rational,
       itemId: string,
     ) => Link,
+    positions: ReadonlyMap<string, BoxPosition> = new Map(),
   ): void {
     const groups = new Map<
       string,
@@ -389,19 +417,33 @@ export class FlowBuilder {
         continue;
       const sink = (id: string): number =>
         Number(id.startsWith('s|') || id.startsWith('o|'));
-      group.sort(
-        (a, b) =>
-          sink(a.link.target) - sink(b.link.target) ||
-          b.share.sub(a.share).toNumber() ||
-          a.link.target.localeCompare(b.link.target),
-      );
+      const distance = (from: string, to: string): number => {
+        const a = positions.get(from),
+          b = positions.get(to);
+        return a && b ? (a.x - b.x) ** 2 + (a.y - b.y) ** 2 : Infinity;
+      };
+      const pending = [...group];
+      const ordered: typeof group = [];
+      let cursor = group[0].link.source;
+      while (pending.length) {
+        pending.sort(
+          (a, b) =>
+            sink(a.link.target) - sink(b.link.target) ||
+            distance(cursor, a.link.target) - distance(cursor, b.link.target) ||
+            b.share.sub(a.share).toNumber() ||
+            a.link.target.localeCompare(b.link.target),
+        );
+        const next = pending.splice(0, 1)[0];
+        ordered.push(next);
+        cursor = next.link.target;
+      }
       const total = group.reduce(
         (sum, entry) => sum.add(entry.share),
         rational.zero,
       );
       let carried = total;
       let source = group[0].link.source;
-      for (const { link, share, itemId } of group) {
+      for (const { link, share, itemId } of ordered) {
         const routed = format(link, carried, share, total, itemId);
         Object.assign(link, routed, { source });
         source = link.target;
