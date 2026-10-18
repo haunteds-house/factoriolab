@@ -220,6 +220,10 @@
     "togglePin": "Pin or unpin {{name}}"
   },
   "flowSettings": {
+    "gridSnap": "Snap boxes to grid",
+    "gridSnapHelp": "One grid cell equals one box. Generated layouts and dragged boxes snap to separate cells. Enabling grid aligns existing pins too.",
+    "compactLayout": "Compact layout",
+    "compactLayoutHelp": "Pulls connected boxes close using forces, while preventing overlap. Boxes can touch, with empty spaces where forces balance or pins need room. Combine with grid snapping for a compact grid.",
     "diagram": "Visualization Type",
     "diagramTooltip": "Select which type of flow visualization to use",
     "elkAlgorithm": "Layout algorithm",

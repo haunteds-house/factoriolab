@@ -183,6 +183,49 @@ describe('Flow', () => {
       expect(component['svg'].select('svg > g').attr('transform')).toBeTruthy();
     });
 
+    it('renders a box-sized grid, snaps dragging, and preserves pins on regeneration', async () => {
+      const settings = {
+        ...initialFlowSettings,
+        gridSnap: true,
+        compactLayout: true,
+      };
+      await component.rebuildBoxLine(mocks.flow(), settings);
+      const pattern = component['svg']?.select('[data-box-grid-pattern]');
+      expect(pattern?.attr('width')).toEqual('38');
+      expect(pattern?.attr('height')).toEqual('38');
+      expect(
+        component['svg']?.select('[data-box-node] rect').attr('width'),
+      ).toEqual('37');
+      component.toggleNodePin('r|0');
+      dragAndDropSelector(fixture, '[data-box-node]', 113, 87);
+      const moved = component['pinnedNodes']().get('r|0');
+      expect((moved?.x ?? 0) % 38).toEqual(0);
+      expect((moved?.y ?? 0) % 38).toEqual(0);
+      zoomSelector(fixture, '#lab-flow-svg > svg', 300);
+      expect(pattern?.attr('patternTransform')).toEqual(
+        component['svg']?.select('g').attr('transform'),
+      );
+      await component.rebuildBoxLine(mocks.flow(), settings);
+      expect(component['pinnedNodes']().get('r|0')).toEqual(moved);
+    });
+
+    it('constrains compact dragging even without grid and tolerates missing layout positions', async () => {
+      spyOn(component['elk'], 'layout').and.resolveTo({
+        children: mocks.flow().nodes,
+        edges: [],
+        width: 100,
+        height: 100,
+      });
+      await component.rebuildBoxLine(mocks.flow(), {
+        ...initialFlowSettings,
+        compactLayout: true,
+      });
+      dragAndDropSelector(fixture, '[data-box-node]', 15, 15);
+      expect(component['svg']?.selectAll('[data-box-node]').size()).toEqual(
+        mocks.flow().nodes.length,
+      );
+    });
+
     it('should set selectedId when a rect is clicked', async () => {
       await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
       altClickSelector(fixture, '#lab-flow-svg svg svg');

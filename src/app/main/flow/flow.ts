@@ -30,6 +30,11 @@ import {
   createBoxGraph,
   restoreBoxPins,
 } from '~/d3/box-line/box-line-layout';
+import {
+  BOX_SIZE,
+  boxDropPosition,
+  spaceBoxLayout,
+} from '~/d3/box-line/box-line-spacing';
 import { BoxEdge, BoxNode } from '~/d3/box-line/models';
 import { num } from '~/d3/helpers';
 import {
@@ -525,6 +530,14 @@ export class Flow {
 
     const boxes = result.children as BoxNode[];
     restoreBoxPins(boxes, flow, pins);
+    spaceBoxLayout(
+      boxes,
+      flow,
+      pins,
+      flowSettings.gridSnap,
+      flowSettings.compactLayout,
+    );
+    this.pinnedNodes.set(new Map(pins));
     this.boxPositions.clear();
     for (const box of boxes) {
       this.boxPositions.set(box.id, { x: box.x ?? 0, y: box.y ?? 0 });
@@ -555,6 +568,33 @@ export class Flow {
     );
     svg.call(zoomBehavior);
 
+    if (flowSettings.gridSnap) {
+      const [x, y, width, height] = this.currentBoxViewBox
+        .split(' ')
+        .map(Number);
+      svg
+        .append('defs')
+        .append('pattern')
+        .attr('id', 'box-grid')
+        .attr('data-box-grid-pattern', '')
+        .attr('width', BOX_SIZE)
+        .attr('height', BOX_SIZE)
+        .attr('patternUnits', 'userSpaceOnUse')
+        .append('path')
+        .attr('d', `M ${BOX_SIZE} 0 L 0 0 0 ${BOX_SIZE}`)
+        .attr('fill', 'none')
+        .attr('class', 'stroke-gray-500')
+        .attr('stroke-width', 0.5);
+      svg
+        .append('rect')
+        .attr('data-box-grid', '')
+        .attr('x', x)
+        .attr('y', y)
+        .attr('width', width)
+        .attr('height', height)
+        .attr('fill', 'url(#box-grid)')
+        .attr('class', 'pointer-events-none');
+    }
     // Draw edges (draw first so nodes are drawn over them)
     const edge = svg
       .append('g')
@@ -621,6 +661,16 @@ export class Flow {
         this.pinnedNodes.set(pins);
       }
     };
+    const dropPosition = (d: BoxNode, desired: BoxPosition): BoxPosition =>
+      flowSettings.gridSnap || flowSettings.compactLayout
+        ? boxDropPosition(
+            desired,
+            boxes
+              .filter((b) => b.id !== d.id)
+              .map((b) => ({ x: num(b.x), y: num(b.y) })),
+            flowSettings.gridSnap,
+          )
+        : desired;
     // Main node svg
     const node = svg
       .append('g')
@@ -646,26 +696,34 @@ export class Flow {
       .call(
         drag<SVGSVGElement, Node & ElkNode>()
           .subject((d) => d as Node & ElkNode)
-          .on('drag', function (this, event: { dy: number; dx: number }, d) {
-            d.y = coalesce(d.y, 0) + event.dy;
-            d.x = coalesce(d.x, 0) + event.dx;
-            select(this).attr('x', d.x).attr('y', d.y);
-            recordPosition(d.id, { x: d.x, y: d.y });
-            path.attr('d', (e) => boxEdgeLine(5)(e));
-            textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
-          }),
+          .on(
+            'drag',
+            function (
+              this,
+              event: { dy: number; dx: number; x: number; y: number },
+              d,
+            ) {
+              const position = dropPosition(d, { x: event.x, y: event.y });
+              d.x = position.x;
+              d.y = position.y;
+              select(this).attr('x', d.x).attr('y', d.y);
+              recordPosition(d.id, { x: d.x, y: d.y });
+              path.attr('d', (e) => boxEdgeLine(5)(e));
+              textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
+            },
+          ),
       );
 
     // Node rect
     node
       .append('rect')
       .attr('class', 'cursor-pointer hover:stroke-brand-400 stroke-gray-700')
-      .attr('x', 1)
-      .attr('y', 1)
-      .attr('ry', 2)
-      .attr('rx', 2)
-      .attr('height', 36)
-      .attr('width', 36)
+      .attr('x', flowSettings.compactLayout ? 0.5 : 1)
+      .attr('y', flowSettings.compactLayout ? 0.5 : 1)
+      .attr('ry', flowSettings.compactLayout ? 0 : 2)
+      .attr('rx', flowSettings.compactLayout ? 0 : 2)
+      .attr('height', flowSettings.compactLayout ? 37 : 36)
+      .attr('width', flowSettings.compactLayout ? 37 : 36)
       .attr('fill', (d) => d.color)
       .append('title')
       .text((d) => d.name);
@@ -844,6 +902,9 @@ export class Flow {
   ): (e: { transform: string }) => void {
     return (e: { transform: string }) => {
       svg.selectAll('svg > g').attr('transform', e.transform);
+      svg
+        .select('[data-box-grid-pattern]')
+        .attr('patternTransform', e.transform);
     };
   }
 }

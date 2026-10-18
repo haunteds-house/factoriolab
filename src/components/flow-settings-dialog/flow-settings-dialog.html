@@ -48,6 +48,20 @@
         (ngModelChange)="apply({ elkAlgorithm: $event })"
       ></lab-select>
     </lab-form-field>
+    <lab-checkbox
+      label="flowSettings.gridSnap"
+      labTooltip="flowSettings.gridSnapHelp"
+      labTooltipPosition="adjacent"
+      [ngModel]="editValue().gridSnap"
+      (ngModelChange)="apply({ gridSnap: $event })"
+    ></lab-checkbox>
+    <lab-checkbox
+      label="flowSettings.compactLayout"
+      labTooltip="flowSettings.compactLayoutHelp"
+      labTooltipPosition="adjacent"
+      [ngModel]="editValue().compactLayout"
+      (ngModelChange)="apply({ compactLayout: $event })"
+    ></lab-checkbox>
   }
 
   <lab-checkbox

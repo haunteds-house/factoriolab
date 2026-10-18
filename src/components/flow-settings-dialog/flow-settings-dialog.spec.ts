@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { initialPreferencesState } from '~/state/preferences/preferences-state';
@@ -22,6 +23,29 @@ describe('FlowSettingsDialog', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('offers independent grid and compact controls for Box-line and saves them', () => {
+    expect(
+      fixture.debugElement.query(By.css('[label="flowSettings.gridSnap"]')),
+    ).toBeNull();
+    component.apply({ diagram: FlowDiagram.BoxLine });
+    fixture.detectChanges();
+    for (const key of ['gridSnap', 'compactLayout'] as const) {
+      const control = fixture.debugElement.query(
+        By.css(`[label="flowSettings.${key}"]`),
+      );
+      control.triggerEventHandler('ngModelChange', true);
+      expect(component['editValue']()[key]).toBeTrue();
+    }
+    const apply = spyOn(component['preferencesStore'], 'apply');
+    component.save();
+    expect(apply).toHaveBeenCalledWith({
+      flowSettings: component['editValue'](),
+    });
+    component.reset();
+    expect(component['editValue']().gridSnap).toBeFalse();
+    expect(component['editValue']().compactLayout).toBeFalse();
   });
 
   describe('apply', () => {
