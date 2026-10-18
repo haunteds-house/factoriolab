@@ -262,6 +262,10 @@
   "no": "아니요",
   "none": "없음",
   "objectives": {
+    "wholeMachinesScale": "Factory scale: {{scale}}×. Objective quantities above show the scaled production.",
+    "wholeMachinesOutputOnly": "Exact ratio scaling requires Output objectives. Input, Limit and Maximize objectives set fixed capacities or optimization weights and cannot be expanded uniformly.",
+    "wholeMachines": "Exact whole-machine ratios",
+    "wholeMachinesHelp": "Scales the selected production plan to its smallest whole-machine expansion at full throughput, preserving all ratios. Recalculates when machines, modules, beacons, bonuses or objectives change. Iron ore, copper ore, stone, coal, water and crude oil are unlimited inputs. Exact ratios can require a large factory.",
     "displayRate": "표시 속도 단위",
     "error": "해를 찾을 수 없습니다",
     "errorDetail": "<b>제한</b> 및 <b>최대화</b> 목표와 활성화된 제작법을 확인하세요. ",

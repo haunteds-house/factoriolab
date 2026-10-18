@@ -2,6 +2,7 @@ import { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
+import { rational } from '~/rational/rational';
 import {
   mockObjective1,
   mockObjective5,
@@ -27,6 +28,17 @@ describe('Objectives', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('updates an edited displayed quantity after committing the shared scale', () => {
+    const commit = spyOn(
+      component['objectivesStore'],
+      'materializeObjectiveScale',
+    );
+    const update = spyOn(component['objectivesStore'], 'updateRecord');
+    component.changeQuantity('1', rational(12));
+    expect(commit).toHaveBeenCalledBefore(update);
+    expect(update).toHaveBeenCalledWith('1', { value: rational(12) });
   });
 
   describe('drop', () => {

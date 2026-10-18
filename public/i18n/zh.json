@@ -262,6 +262,10 @@
   "no": "否",
   "none": "无",
   "objectives": {
+    "wholeMachinesScale": "Factory scale: {{scale}}×. Objective quantities above show the scaled production.",
+    "wholeMachinesOutputOnly": "Exact ratio scaling requires Output objectives. Input, Limit and Maximize objectives set fixed capacities or optimization weights and cannot be expanded uniformly.",
+    "wholeMachines": "Exact whole-machine ratios",
+    "wholeMachinesHelp": "Scales the selected production plan to its smallest whole-machine expansion at full throughput, preserving all ratios. Recalculates when machines, modules, beacons, bonuses or objectives change. Iron ore, copper ore, stone, coal, water and crude oil are unlimited inputs. Exact ratios can require a large factory.",
     "displayRate": "速率显示为",
     "error": "未找到解法",
     "errorDetail": "检查 <b>限制</b> 和 <b>最大化</b> 目标以及启用的配方。",

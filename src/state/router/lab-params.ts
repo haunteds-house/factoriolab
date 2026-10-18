@@ -21,6 +21,8 @@ export interface LabParams {
   omt?: string;
   /** `boolean` Require machines output */
   orm?: string;
+  /** Whole machines at full capacity */
+  owm?: string;
   /** `number` Display rate */
   odr?: string;
   /** `Set` Excluded items */

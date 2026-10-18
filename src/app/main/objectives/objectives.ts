@@ -26,13 +26,14 @@ import {
 import { cva } from 'class-variance-authority';
 
 import { Button } from '~/components/button/button';
+import { Checkbox } from '~/components/checkbox/checkbox';
 import { FormField } from '~/components/form-field/form-field';
 import { InputNumber } from '~/components/input-number/input-number';
 import { ObjectiveForm } from '~/components/objective-form';
 import { Picker } from '~/components/picker/picker';
 import { Select } from '~/components/select/select';
 import { Tooltip } from '~/components/tooltip/tooltip';
-import { rational } from '~/rational/rational';
+import { Rational, rational } from '~/rational/rational';
 import { ObjectiveSettings } from '~/state/objectives/objective';
 import {
   ObjectiveType,
@@ -64,6 +65,7 @@ const host = cva(
   selector: 'lab-objectives',
   imports: [
     FormsModule,
+    Checkbox,
     CdkDropList,
     CdkDrag,
     CdkDragHandle,
@@ -102,7 +104,7 @@ export class Objectives {
   protected readonly faXmark = faXmark;
   protected readonly MaximizeType = MaximizeType;
   protected readonly rational = rational;
-  protected readonly objectives = this.objectivesStore.objectives;
+  protected readonly objectives = this.objectivesStore.displayObjectives;
   protected readonly ObjectiveType = ObjectiveType;
   protected readonly ObjectiveUnit = ObjectiveUnit;
   protected readonly result = this.objectivesStore.matrixResult;
@@ -113,6 +115,11 @@ export class Objectives {
     host({ pin: this.preferencesStore.pinObjectives() }),
   );
 
+  changeQuantity(id: string, value: Rational): void {
+    this.objectivesStore.materializeObjectiveScale();
+    this.objectivesStore.updateRecord(id, { value });
+  }
+
   drop(event: CdkDragDrop<string[]>): void {
     const objectives = [...this.objectives()];
     moveItemInArray(objectives, event.previousIndex, event.currentIndex);
@@ -121,11 +128,13 @@ export class Objectives {
 
   openPicker(): void {
     this.objectiveForm.openPicker().subscribe((value) => {
+      this.objectivesStore.materializeObjectiveScale();
       this.objectivesStore.add(value);
     });
   }
 
   changeTarget(objective: ObjectiveSettings): void {
+    this.objectivesStore.materializeObjectiveScale();
     const targetId =
       objective.unit === ObjectiveUnit.Machines
         ? this.picker.pickRecipe(objective.targetId)

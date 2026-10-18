@@ -969,6 +969,7 @@ export class RouterSync {
     sub('och', (s) => s.checkedObjectiveIds, objectiveIds);
     num('omt', (s) => s.maximizeType);
     bln('orm', (s) => s.requireMachinesOutput);
+    bln('owm', (s) => s.wholeMachines);
     num('odr', (s) => s.displayRate);
     sub('iex', (s) => s.excludedItemIds, data.itemIds, hash.items);
     sub('ich', (s) => s.checkedItemIds, data.itemIds, hash.items);
@@ -1037,6 +1038,7 @@ export class RouterSync {
       checkedObjectiveIds: sub('och', objectiveIds),
       maximizeType: num('omt'),
       requireMachinesOutput: bln('orm'),
+      wholeMachines: bln('owm'),
       displayRate: num('odr'),
       excludedItemIds: sub('iex', modHash.items),
       checkedItemIds: sub('ich', modHash.items),
