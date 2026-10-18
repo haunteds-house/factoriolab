@@ -204,8 +204,16 @@
   },
   "filter": "Filter",
   "flow": {
+    "clearPins": "Clear pins",
     "downloadAsJson": "Baixar como JSON",
-    "flowSettings": "Configurações de fluxo"
+    "flowSettings": "Configurações de fluxo",
+    "layoutError": "The layout could not be regenerated. Your previous layout and pins are still available. Try again.",
+    "pinBoxes": "Pin boxes",
+    "pinHelp": "Drag boxes to position them. Turn on Pin boxes, then click a box to pin or unpin it. Shift-click also toggles a pin.",
+    "pinnedCount": "Pinned: {{count}}",
+    "pinnedLayoutHelp": "Pinned boxes stay in place when you regenerate. You can still drag them. Pins use the stress layout and are kept while this Flow view is open.",
+    "regenerateLayout": "Regenerate layout",
+    "togglePin": "Pin or unpin {{name}}"
   },
   "flowSettings": {
     "diagram": "Tipo de visualização",

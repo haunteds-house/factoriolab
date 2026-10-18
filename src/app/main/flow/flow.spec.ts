@@ -29,6 +29,8 @@ describe('Flow', () => {
     fixture = TestBed.createComponent(Flow);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    // Settle the initial debounced store emission before testing chart methods directly.
+    await new Promise((resolve) => setTimeout(resolve, 250));
   });
 
   it('should create', () => {
@@ -140,6 +142,141 @@ describe('Flow', () => {
       spyOn(component['selectedId'], 'set');
       altClickSelector(fixture, '#lab-flow-svg svg svg', 0, true);
       expect(component['selectedId'].set).not.toHaveBeenCalled();
+    });
+
+    it('pins boxes on click in pin mode and leaves details selection alone', async () => {
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      component.togglePinMode();
+      altClickSelector(fixture, '[data-box-node]');
+      expect(component['pinnedNodes']().has('r|0')).toBeTrue();
+      expect(component['selectedId']()).toBeUndefined();
+      expect(
+        fixture.nativeElement
+          .querySelector('[data-box-node]')
+          .getAttribute('aria-pressed'),
+      ).toEqual('true');
+      altClickSelector(fixture, '[data-box-node]');
+      expect(component['pinnedNodes']().size).toEqual(0);
+    });
+
+    it('supports shift-click and keyboard pinning', async () => {
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      const node = fixture.nativeElement.querySelector(
+        '[data-box-node]',
+      ) as SVGElement;
+      node.dispatchEvent(new MouseEvent('click', { shiftKey: true }));
+      expect(component['pinnedNodes']().has('r|0')).toBeTrue();
+      node.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true }),
+      );
+      expect(component['pinnedNodes']().size).toEqual(0);
+      node.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+      expect(component['selectedId']()).toEqual('r|0');
+      node.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+      expect(component['pinnedNodes']().size).toEqual(0);
+      component.togglePinMode();
+      node.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+      expect(component['pinnedNodes']().has('r|0')).toBeTrue();
+    });
+
+    it('keeps moved pins and the viewport fixed when regenerating', async () => {
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      component.toggleNodePin('r|0');
+      component.toggleNodePin('r|1');
+      const original = component['pinnedNodes']().get('r|0');
+      dragAndDropSelector(fixture, '[data-box-node]', 100, 80);
+      const moved = component['pinnedNodes']().get('r|0');
+      expect(moved).not.toEqual(original);
+      const pins = new Map(component['pinnedNodes']());
+      zoomSelector(fixture, '#lab-flow-svg > svg', 300);
+      const viewBox = component['svg']?.attr('viewBox');
+      const transform = component['svg']?.select('g').attr('transform');
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      expect(component['svg']?.attr('viewBox')).toEqual(viewBox);
+      expect(component['svg']?.select('g').attr('transform')).toEqual(
+        transform,
+      );
+      for (const [id, p] of pins) {
+        expect(component['boxPositions'].get(id)).toEqual(p);
+      }
+      component.clearPins();
+      expect(component['pinnedNodes']().size).toEqual(0);
+    });
+
+    it('drops pins for nodes removed from the graph', async () => {
+      const flow = mocks.flow();
+      await component.rebuildBoxLine(flow, initialFlowSettings);
+      component.toggleNodePin('r|0');
+      await component.rebuildBoxLine(
+        {
+          nodes: flow.nodes.filter((n) => n.id !== 'r|0'),
+          links: flow.links.filter((l) => l.source !== 'r|0'),
+        },
+        initialFlowSettings,
+      );
+      expect(component['pinnedNodes']().size).toEqual(0);
+    });
+
+    it('keeps the current chart and pins when the layout fails', async () => {
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      component.toggleNodePin('r|0');
+      const svg = component['svg']?.node();
+      spyOn(component['elk'], 'layout').and.returnValue(
+        Promise.reject(new Error('failed')),
+      );
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      expect(component['svg']?.node()).toBe(svg);
+      expect(component['pinnedNodes']().has('r|0')).toBeTrue();
+      expect(component['layoutError']()).toBeTrue();
+      expect(component['layoutPending']()).toBeFalse();
+    });
+
+    it('ignores a completed layout after switching away from box-line', async () => {
+      let finish: (value: any) => void = () => {};
+      spyOn(component['elk'], 'layout').and.returnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const pending = component.rebuildBoxLine(
+        mocks.flow(),
+        initialFlowSettings,
+      );
+      await component.rebuildChart(mocks.flow(), initialFlowSettings);
+      const sankeySvg = component['svg']?.node();
+      finish({
+        children: mocks.flow().nodes,
+        edges: [],
+        width: 100,
+        height: 100,
+      });
+      await pending;
+      expect(component['svg']?.node()).toBe(sankeySvg);
+      expect(component['layoutPending']()).toBeFalse();
+    });
+
+    it('requests a new layout seed when regenerating', async () => {
+      const rebuild = spyOn(component, 'rebuildChart').and.resolveTo();
+      const seed = component['layoutSeed'];
+      await component.regenerateLayout();
+      expect(component['layoutSeed']).toEqual(seed + 1);
+      expect(rebuild).toHaveBeenCalledWith(
+        component['flowBuilder'].flowData(),
+        component['preferencesStore'].flowSettings(),
+      );
+    });
+
+    it('handles missing layout coordinates and unknown pin IDs safely', async () => {
+      spyOn(component['elk'], 'layout').and.resolveTo({
+        children: mocks.flow().nodes,
+        edges: [],
+        width: 100,
+        height: 100,
+      });
+      await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
+      expect(component['boxPositions'].get('r|0')).toEqual({ x: 0, y: 0 });
+      component.toggleNodePin('unknown');
+      expect(component['pinnedNodes']().size).toEqual(0);
     });
   });
 });

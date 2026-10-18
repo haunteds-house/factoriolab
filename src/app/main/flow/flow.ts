@@ -2,21 +2,34 @@ import { Dialog } from '@angular/cdk/dialog';
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
-import { faFileArrowDown, faGear } from '@fortawesome/free-solid-svg-icons';
-import { drag, select, Selection, zoom } from 'd3';
-import ELK, { ElkExtendedEdge, ElkNode } from 'elkjs';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import {
+  faArrowsRotate,
+  faFileArrowDown,
+  faGear,
+  faThumbtack,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
+import { drag, select, Selection, zoom, zoomTransform } from 'd3';
+import ELK, { ElkNode } from 'elkjs';
 import { combineLatest, debounceTime, switchMap } from 'rxjs';
 
 import { Button } from '~/components/button/button';
 import { FlowSettingsDialog } from '~/components/flow-settings-dialog/flow-settings-dialog';
 import { Steps } from '~/components/steps/steps';
 import { boxEdgeLine } from '~/d3/box-line/box-line-edge';
+import {
+  BoxPosition,
+  boxViewBox,
+  createBoxGraph,
+  restoreBoxPins,
+} from '~/d3/box-line/box-line-layout';
 import { BoxEdge, BoxNode } from '~/d3/box-line/models';
 import { num } from '~/d3/helpers';
 import {
@@ -47,30 +60,28 @@ import { FlowDiagram } from '~/state/preferences/flow-diagram';
 import { FlowSettings } from '~/state/preferences/flow-settings';
 import { PreferencesStore } from '~/state/preferences/preferences-store';
 import { SankeyAlign } from '~/state/preferences/sankey-align';
+import { Translate } from '~/translate/translate';
+import { TranslatePipe } from '~/translate/translate-pipe';
 import { coalesce } from '~/utils/nullish';
 import { spread } from '~/utils/object';
 
 export const SVG_ID = 'lab-flow-svg';
 const NODE_WIDTH = 36;
 
-interface ElkGraph extends ElkNode {
-  children: BoxNode[];
-  edges: (Link & ElkExtendedEdge)[];
-}
-
 @Component({
   selector: 'lab-flow',
-  imports: [Button, Steps],
+  imports: [Button, Steps, TranslatePipe],
   templateUrl: './flow.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'flex flex-col gap-1 pb-3 sm:gap-2 lg:pb-6' },
 })
 export class Flow {
-  // private readonly destroyRef = inject(DestroyRef);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly translate = inject(Translate);
   protected readonly dialog = inject(Dialog);
   protected readonly exporter = inject(Exporter);
   protected readonly flowBuilder = inject(FlowBuilder);
-  private readonly preferencesStore = inject(PreferencesStore);
+  protected readonly preferencesStore = inject(PreferencesStore);
 
   private readonly svgElement =
     viewChild.required<ElementRef<HTMLElement>>('svg');
@@ -80,18 +91,36 @@ export class Flow {
 
   protected readonly selectedId = signal<string | undefined>(undefined);
 
+  protected readonly pinMode = signal(false);
+  protected readonly pinnedNodes = signal<ReadonlyMap<string, BoxPosition>>(
+    new Map(),
+  );
+  protected readonly layoutPending = signal(false);
+  protected readonly layoutError = signal(false);
+  protected readonly FlowDiagram = FlowDiagram;
+  protected readonly faArrowsRotate = faArrowsRotate;
+  protected readonly faThumbtack = faThumbtack;
+  protected readonly faXmark = faXmark;
+  private readonly boxPositions = new Map<string, BoxPosition>();
+  private layoutVersion = 0;
+  private layoutSeed = 1;
+  private currentBoxViewBox: string | undefined;
   private readonly elk = new ELK();
   protected readonly faFileArrowDown = faFileArrowDown;
   protected readonly faGear = faGear;
   protected readonly FlowSettingsDialog = FlowSettingsDialog;
 
   constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.layoutVersion++;
+    });
     combineLatest({
       data: toObservable(this.flowBuilder.flowData),
       settings: toObservable(this.preferencesStore.flowSettings),
     })
       .pipe(
         debounceTime(200),
+        takeUntilDestroyed(this.destroyRef),
         switchMap(({ data, settings }) => this.rebuildChart(data, settings)),
       )
       .subscribe();
@@ -101,13 +130,78 @@ export class Flow {
     flowData: FlowData | null,
     flowSettings: FlowSettings,
   ): Promise<void> {
-    select(`#${SVG_ID} > *`).remove();
+    if (flowData == null) {
+      this.layoutVersion++;
+      this.layoutPending.set(false);
+      select(`#${SVG_ID} > *`).remove();
+      return;
+    }
 
-    if (flowData == null) return;
-
-    if (flowSettings.diagram === FlowDiagram.Sankey)
+    if (flowSettings.diagram === FlowDiagram.Sankey) {
+      this.layoutVersion++;
+      this.layoutPending.set(false);
+      this.layoutError.set(false);
+      select(`#${SVG_ID} > *`).remove();
       this.rebuildSankey(flowData, flowSettings);
-    else await this.rebuildBoxLine(flowData, flowSettings);
+    } else await this.rebuildBoxLine(flowData, flowSettings);
+  }
+
+  async regenerateLayout(): Promise<void> {
+    this.layoutSeed++;
+    await this.rebuildChart(
+      this.flowBuilder.flowData(),
+      this.preferencesStore.flowSettings(),
+    );
+  }
+
+  togglePinMode(): void {
+    this.pinMode.update((value) => !value);
+    this.updatePinStyles();
+  }
+
+  clearPins(): void {
+    this.cancelPendingLayout();
+    this.pinnedNodes.set(new Map());
+    this.updatePinStyles();
+  }
+
+  toggleNodePin(id: string): void {
+    const position = this.boxPositions.get(id);
+    if (position == null) return;
+    this.cancelPendingLayout();
+    const pins = new Map(this.pinnedNodes());
+    if (pins.has(id)) pins.delete(id);
+    else pins.set(id, { ...position });
+    this.pinnedNodes.set(pins);
+    this.updatePinStyles();
+  }
+
+  private cancelPendingLayout(): void {
+    this.layoutVersion++;
+    this.layoutPending.set(false);
+  }
+
+  private updatePinStyles(): void {
+    const pins = this.pinnedNodes();
+    this.svg
+      ?.selectAll<SVGSVGElement, BoxNode>('[data-box-node]')
+      .attr('aria-label', (d) =>
+        this.pinMode()
+          ? this.translate.get('flow.togglePin', { name: d.name })
+          : d.name,
+      )
+      .attr('aria-pressed', (d) => pins.has(d.id).toString())
+      .select('rect')
+      .attr('class', (d) =>
+        pins.has(d.id)
+          ? 'cursor-pointer stroke-brand-400'
+          : 'cursor-pointer hover:stroke-brand-400 stroke-gray-700',
+      )
+      .attr('stroke-width', (d) => (pins.has(d.id) ? 2.5 : 1));
+    this.svg
+      ?.selectAll<SVGSVGElement, BoxNode>('[data-box-node]')
+      .select('[data-pin-marker]')
+      .style('display', (d) => (pins.has(d.id) ? null : 'none'));
   }
 
   rebuildSankey(flowData: FlowData, flowSettings: FlowSettings): void {
@@ -326,22 +420,30 @@ export class Flow {
     flow: FlowData,
     flowSettings: FlowSettings,
   ): Promise<void> {
-    const graph: ElkGraph = {
-      id: 'root',
-      layoutOptions: { 'elk.algorithm': flowSettings.elkAlgorithm },
-      children: flow.nodes.map((n) => ({ ...n, ...{ width: 38, height: 38 } })),
-      edges: flow.links.map((n) => ({
-        ...n,
-        ...{
-          id: n.source + '|' + n.target,
-          sources: [n.source],
-          targets: [n.target],
-        },
-      })),
-    };
-    const result = await this.elk.layout(graph);
-
+    const version = ++this.layoutVersion;
+    const ids = new Set(flow.nodes.map((n) => n.id));
+    const pins = new Map([...this.pinnedNodes()].filter(([id]) => ids.has(id)));
+    this.pinnedNodes.set(pins);
+    const graph = createBoxGraph(
+      flow,
+      flowSettings.elkAlgorithm,
+      this.boxPositions,
+      pins,
+      this.layoutSeed,
+    );
+    this.layoutPending.set(true);
+    this.layoutError.set(false);
+    let result: ElkNode;
+    try {
+      result = await this.elk.layout(graph);
+    } catch {
+      if (version === this.layoutVersion) this.layoutError.set(true);
+      return;
+    } finally {
+      if (version === this.layoutVersion) this.layoutPending.set(false);
+    }
     if (
+      version !== this.layoutVersion ||
       result.children == null ||
       result.edges == null ||
       result.width == null ||
@@ -349,7 +451,18 @@ export class Flow {
     )
       return;
 
-    const boxes = result.children;
+    const boxes = result.children as BoxNode[];
+    restoreBoxPins(boxes, flow, pins);
+    this.boxPositions.clear();
+    for (const box of boxes) {
+      this.boxPositions.set(box.id, { x: box.x ?? 0, y: box.y ?? 0 });
+    }
+    const previousSvg = this.svg?.node();
+    const transform =
+      pins.size && previousSvg ? zoomTransform(previousSvg) : undefined;
+    if (!pins.size || this.currentBoxViewBox == null)
+      this.currentBoxViewBox = boxViewBox(boxes);
+    select(`#${SVG_ID} > *`).remove();
     const edges = flow.links.map(
       (l): BoxEdge =>
         spread<BoxEdge>(l as unknown as BoxEdge, {
@@ -361,13 +474,14 @@ export class Flow {
 
     const svg = select(this.svgElement().nativeElement)
       .append('svg')
-      .attr(
-        'viewBox',
-        `0 0 ${result.width.toString()} ${result.height.toString()}`,
-      )
+      .attr('viewBox', this.currentBoxViewBox)
       .attr('class', 'min-h-[75dvh]');
 
-    svg.call(zoom<SVGSVGElement, unknown>().on('zoom', this.zoomHandler(svg)));
+    const zoomBehavior = zoom<SVGSVGElement, unknown>().on(
+      'zoom',
+      this.zoomHandler(svg),
+    );
+    svg.call(zoomBehavior);
 
     // Draw edges (draw first so nodes are drawn over them)
     const edge = svg
@@ -426,16 +540,41 @@ export class Flow {
       .attr('class', 'pointer-events-none')
       .text((l) => l.text);
 
+    const recordPosition = (id: string, position: BoxPosition): void => {
+      this.cancelPendingLayout();
+      this.boxPositions.set(id, position);
+      if (this.pinnedNodes().has(id)) {
+        const pins = new Map(this.pinnedNodes());
+        pins.set(id, position);
+        this.pinnedNodes.set(pins);
+      }
+    };
     // Main node svg
     const node = svg
       .append('g')
       .selectAll<SVGSVGElement, unknown>('svg')
-      .data(result.children)
+      .data(boxes)
       .join('svg')
       .attr('class', 'overflow-visible')
+      .attr('width', 38)
+      .attr('height', 38)
       .attr('x', (d) => coalesce(d.x, 0))
       .attr('y', (d) => coalesce(d.y, 0))
-      .on('click', this.clickHandler())
+      .attr('data-box-node', (d) => d.id)
+      .attr('role', 'button')
+      .attr('tabindex', 0)
+      .attr('aria-label', (d) => d.name)
+      .on('click', (e: MouseEvent, d) => {
+        if (e.defaultPrevented) return;
+        if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
+        else this.selectedId.set(d.stepId);
+      })
+      .on('keydown', (e: KeyboardEvent, d) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        if (this.pinMode() || e.shiftKey) this.toggleNodePin(d.id);
+        else this.selectedId.set(d.stepId);
+      })
       .call(
         drag<SVGSVGElement, Node & ElkNode>()
           .subject((d) => d as Node & ElkNode)
@@ -443,6 +582,7 @@ export class Flow {
             d.y = coalesce(d.y, 0) + event.dy;
             d.x = coalesce(d.x, 0) + event.dx;
             select(this).attr('x', d.x).attr('y', d.y);
+            recordPosition(d.id, { x: d.x, y: d.y });
             path.attr('d', (e) => boxEdgeLine(5)(e));
             textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
           }),
@@ -555,7 +695,23 @@ export class Flow {
       .attr('x', 19)
       .text((d) => d.text);
 
+    node
+      .append('svg')
+      .attr('data-pin-marker', '')
+      .attr('viewBox', `0 0 ${faThumbtack.icon[0]} ${faThumbtack.icon[1]}`)
+      .attr('width', 12)
+      .attr('height', 12)
+      .attr('x', 28)
+      .attr('y', -5)
+      .attr('class', 'pointer-events-none fill-brand-400')
+      .append('path')
+      .attr('d', faThumbtack.icon[4] as string);
     this.svg = svg;
+    this.updatePinStyles();
+    if (transform)
+      svg.call((s) => {
+        zoomBehavior.transform(s, transform);
+      });
   }
 
   private getLayout(
