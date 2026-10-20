@@ -204,7 +204,7 @@
   },
   "filter": "필터",
   "flow": {
-    "pcbHelp": "PCB-style routing: recipes are footprints and materials are orthogonal traces. Placement reserves routing channels; traces avoid boxes. Tries two routing orders to reduce length, bends and congestion. Crossings pass over one another and are not junctions. Dragging reroutes the traces; pins and series routing work here too.",
+    "pcbHelp": "PCB-style routing: recipes are footprints and materials are orthogonal traces. Placement reserves routing channels; traces avoid boxes. Tries two routing orders to reduce length, bends and congestion. Crossings pass over one another and are not junctions. Traces reroute when you release a moved footprint; pins and series routing work here too.",
     "pcbStats": "Route length: {{length}} box-widths · {{bends}} bends · {{crossings}} crossings",
     "pcbUnrouted": "{{count}} traces could not be routed. Move footprints apart or regenerate the layout.",
     "seriesRoutingHelp": "Series routing carries each solid material to the nearest unvisited consumer, using actual box positions. Output share breaks distance ties. Each consumer takes only its required share; the remainder continues. Outputs and surplus come last. Hover a link for carried, consumed and remaining amounts. Recipe calculations are unchanged.",

@@ -819,6 +819,7 @@ export class Flow {
               flowSettings.gridSnap,
             )
           : desired;
+    let footprintMoved = false;
     // Main node svg
     const node = svg
       .append('g')
@@ -843,7 +844,7 @@ export class Flow {
       })
       .call(
         drag<SVGSVGElement, Node & ElkNode>()
-          .subject((d) => d as Node & ElkNode)
+          .subject((_event, d) => ({ x: num(d.x), y: num(d.y) }))
           .on(
             'drag',
             function (
@@ -852,13 +853,18 @@ export class Flow {
               d,
             ) {
               const position = dropPosition(d, { x: event.x, y: event.y });
+              footprintMoved ||= position.x !== d.x || position.y !== d.y;
               d.x = position.x;
               d.y = position.y;
               select(this).attr('x', d.x).attr('y', d.y);
               recordPosition(d.id, { x: d.x, y: d.y });
-              redrawLinks();
+              if (!pcb) redrawLinks();
             },
-          ),
+          )
+          .on('end', () => {
+            if (pcb && footprintMoved) redrawLinks();
+            footprintMoved = false;
+          }),
       );
 
     // Node rect

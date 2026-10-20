@@ -394,11 +394,22 @@ describe('Flow', () => {
         component['svg']?.select('[data-box-grid-pattern]').attr('width'),
       ).toEqual('38');
       component.toggleNodePin(data.nodes[0].id);
-      const before = component['svg']?.select('[data-pcb-trace]').attr('d');
-      dragAndDropSelector(fixture, '[data-box-node]', 160, 90);
+      const before = component['svg']
+        ?.selectAll<SVGPathElement, unknown>('[data-pcb-trace]')
+        .nodes()
+        .map((n) => n.getAttribute('d'));
+      dragAndDropSelector(fixture, '[data-box-node]', -1600, -900);
       expect(
-        component['svg']?.select('[data-pcb-trace]').attr('d'),
+        component['svg']
+          ?.selectAll<SVGPathElement, unknown>('[data-pcb-trace]')
+          .nodes()
+          .map((n) => n.getAttribute('d')),
       ).not.toEqual(before);
+      expect(component['pcbMetrics']()?.unrouted).toEqual(0);
+      const metrics = component['pcbMetrics']();
+      dragAndDropSelector(fixture, '[data-box-node]', 0, 0);
+      expect(component['pcbMetrics']()).toBe(metrics);
+      dragAndDropSelector(fixture, '[data-box-node]', 0, -1600);
       expect(component['pcbMetrics']()?.unrouted).toEqual(0);
       const pin = component['pinnedNodes']().get(data.nodes[0].id);
       await component.rebuildBoxLine(data, settings);
