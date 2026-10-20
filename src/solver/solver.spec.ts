@@ -84,6 +84,115 @@ describe('Solver', () => {
   });
 
   describe('solve', () => {
+    it('solves whole-machine ratios with unlimited primary resources and full power accounting', () => {
+      const settings = { ...settingsStore.settings(), wholeMachines: true };
+      const data = recipesStore.adjustedDataset();
+      const objective = {
+        id: 'iron',
+        targetId: RecipeId.IronPlate,
+        value: rational(12, 5),
+        unit: ObjectiveUnit.Machines,
+        type: ObjectiveType.Output,
+        recipe: data.adjustedRecipe[RecipeId.IronPlate],
+      };
+      const result = service.solve(
+        [objective],
+        settings,
+        data,
+        false,
+        'simplex',
+      );
+      expect(result.resultType).toEqual('solved');
+      expect(result.objectiveScale).toEqual(rational(5, 4));
+      const furnace = result.steps.find((s) => s.recipeObjectiveId === 'iron')!;
+      expect(furnace.machines).toEqual(rational(3));
+      expect(
+        result.steps
+          .filter((s) => s.recipe?.producers?.length && !s.recipe.part)
+          .every((s) => s.machines?.isInteger()),
+      ).toBeTrue();
+      expect(
+        result.steps.some((s) => s.recipeId === RecipeId.IronOre),
+      ).toBeFalse();
+      expect(settings.excludedItemIds.has(ItemId.IronOre)).toBeFalse();
+      expect(objective.value).toEqual(rational(12, 5));
+      expect(
+        result.steps.find((s) => s.itemId === ItemId.IronPlate)?.items,
+      ).toEqual(
+        objective.recipe.out[ItemId.IronPlate]!.mul(rational(3)).div(
+          objective.recipe.time,
+        ),
+      );
+    });
+
+    it('scales item objectives and recalculates after a machine upgrade', () => {
+      const settings = { ...settingsStore.settings(), wholeMachines: true };
+      const data = recipesStore.adjustedDataset();
+      const objective = {
+        id: 'iron',
+        targetId: ItemId.IronPlate,
+        value: rational(1, 7),
+        unit: ObjectiveUnit.Items,
+        type: ObjectiveType.Output,
+      };
+      const result = service.solve(
+        [objective],
+        settings,
+        data,
+        false,
+        'simplex',
+      );
+      expect(result.resultType).toEqual('solved');
+      const count = result.steps.find(
+        (s) => s.recipeId === RecipeId.IronPlate,
+      )!.machines!;
+      expect(count.isInteger()).toBeTrue();
+      const recipe = data.adjustedRecipe[RecipeId.IronPlate];
+      const upgraded = {
+        ...data,
+        adjustedRecipe: {
+          ...data.adjustedRecipe,
+          [recipe.id]: { ...recipe, time: recipe.time.div(rational(2)) },
+        },
+      };
+      // Recompute normalized per-machine I/O just as Adjustment does.
+      upgraded.adjustedRecipe[recipe.id] = {
+        ...upgraded.adjustedRecipe[recipe.id],
+        output: Object.fromEntries(
+          Object.entries(recipe.output).map(([id, n]) => [
+            id,
+            n.mul(rational(2)),
+          ]),
+        ),
+      };
+      const next = service.solve(
+        [objective],
+        settings,
+        upgraded,
+        false,
+        'simplex',
+      );
+      expect(next.resultType).toEqual('solved');
+      expect(next.objectiveScale).not.toEqual(result.objectiveScale);
+      expect(
+        next.steps
+          .find((s) => s.recipeId === RecipeId.IronPlate)!
+          .machines!.isInteger(),
+      ).toBeTrue();
+    });
+
+    it('does not silently expand fixed input or limit objectives', () => {
+      const result = service.solve(
+        mocks.objectives(),
+        { ...settingsStore.settings(), wholeMachines: true },
+        recipesStore.adjustedDataset(),
+        false,
+        'simplex',
+      );
+      expect(result.wholeMachinesError).toEqual('output-only');
+      expect(result.steps).toEqual([]);
+    });
+
     it('should handle calculations paused', () => {
       expect(
         service.solve(

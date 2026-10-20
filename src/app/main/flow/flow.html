@@ -1,4 +1,4 @@
-<div class="gap-1 sm:gap-2 flex">
+<div class="gap-1 sm:gap-2 flex flex-wrap items-center">
   <button
     type="button"
     labButton
@@ -11,12 +11,90 @@
     <button
       type="button"
       labButton
+      [faIcon]="faThumbtack"
+      text="flow.pinBoxes"
+      [color]="pinMode() ? 'brand' : 'gray'"
+      [attr.aria-pressed]="pinMode()"
+      (click)="togglePinMode()"
+    ></button>
+    <button
+      type="button"
+      labButton
+      [faIcon]="faArrowsRotate"
+      text="flow.regenerateLayout"
+      [loading]="layoutPending()"
+      [disabled]="layoutPending()"
+      (click)="regenerateLayout()"
+    ></button>
+    <button
+      type="button"
+      labButton
+      [faIcon]="faXmark"
+      text="flow.clearPins"
+      [disabled]="!pinnedNodes().size"
+      (click)="clearPins()"
+    ></button>
+    <span class="text-sm" aria-live="polite">{{
+      'flow.pinnedCount' | translate: { count: pinnedNodes().size }
+    }}</span>
+    <button
+      type="button"
+      labButton
       [faIcon]="faFileArrowDown"
       text="flow.downloadAsJson"
-      (click)="exporter.flowToJson(_flowData)"
+      (click)="exportFlow(_flowData)"
     ></button>
   }
 </div>
+<p class="text-sm text-gray-400">{{ 'flow.pinHelp' | translate }}</p>
+@if (pinnedNodes().size) {
+  <p class="text-sm text-gray-400">
+    {{ 'flow.pinnedLayoutHelp' | translate }}
+  </p>
+}
+@if (layoutError()) {
+  <p class="text-sm text-red-400" role="alert">
+    {{ 'flow.layoutError' | translate }}
+  </p>
+}
+
+@if (
+  preferencesStore.flowSettings().diagram !== FlowDiagram.Sankey &&
+  preferencesStore.flowSettings().linkText === LinkValue.Belts
+) {
+  <p class="text-sm text-gray-400">{{ 'flow.beltLinesHelp' | translate }}</p>
+}
+
+@if (
+  preferencesStore.flowSettings().diagram !== FlowDiagram.Sankey &&
+  preferencesStore.flowSettings().seriesRouting
+) {
+  <p class="text-sm text-gray-400">
+    {{ 'flow.seriesRoutingHelp' | translate }}
+  </p>
+}
+
+@if (preferencesStore.flowSettings().diagram === FlowDiagram.Pcb) {
+  <p class="text-sm text-gray-400">{{ 'flow.pcbHelp' | translate }}</p>
+  @if (pcbMetrics(); as stats) {
+    <p class="text-sm" aria-live="polite">
+      {{
+        'flow.pcbStats'
+          | translate
+            : {
+                length: (stats.length / 38).toFixed(1),
+                bends: stats.bends,
+                crossings: stats.crossings,
+              }
+      }}
+    </p>
+    @if (stats.unrouted) {
+      <p class="text-sm text-red-400" role="alert">
+        {{ 'flow.pcbUnrouted' | translate: { count: stats.unrouted } }}
+      </p>
+    }
+  }
+}
 
 <div
   id="lab-flow-svg"

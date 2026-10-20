@@ -28,7 +28,7 @@ export function boxEdgeLine(
   };
 }
 
-function getArcPoint(
+export function getArcPoint(
   source: [number, number],
   target: [number, number],
   node: BoxNode,

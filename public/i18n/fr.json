@@ -204,10 +204,31 @@
   },
   "filter": "Filter",
   "flow": {
+    "pcbHelp": "PCB-style routing: recipes are footprints and materials are orthogonal traces. Placement reserves routing channels; traces avoid boxes. Tries two routing orders to reduce length, bends and congestion. Crossings pass over one another and are not junctions. Traces reroute when you release a moved footprint; pins and series routing work here too.",
+    "pcbStats": "Route length: {{length}} box-widths · {{bends}} bends · {{crossings}} crossings",
+    "pcbUnrouted": "{{count}} traces could not be routed. Move footprints apart or regenerate the layout.",
+    "seriesRoutingHelp": "Series routing carries each solid material to the nearest unvisited consumer, using actual box positions. Output share breaks distance ties. Each consumer takes only its required share; the remainder continues. Outputs and surplus come last. Hover a link for carried, consumed and remaining amounts. Recipe calculations are unchanged.",
+    "seriesLinkTitle": "{{item}} — carried: {{carried}}; used here: {{taken}} ({{percent}}% of the source output); continues: {{remaining}}.",
+    "beltLinesHelp": "Each line represents one whole belt; fractional requirements add another full line (2.4 → 3). Hover a link for throughput and belt count. Extremely large flows show a multiplier: ×2 means up to two belts per line. Fluids keep a single link.",
+    "beltLinesTitle": "{{count}} belts required; calculated throughput: {{throughput}} belt equivalents. Up to {{multiplier}} belts per line.",
+    "clearPins": "Clear pins",
     "downloadAsJson": "Download as JSON",
-    "flowSettings": "Flow settings"
+    "flowSettings": "Flow settings",
+    "layoutError": "The layout could not be regenerated. Your previous layout and pins are still available. Try again.",
+    "pinBoxes": "Pin boxes",
+    "pinHelp": "Drag boxes to position them. Turn on Pin boxes, then click a box to pin or unpin it. Shift-click also toggles a pin.",
+    "pinnedCount": "Pinned: {{count}}",
+    "pinnedLayoutHelp": "Pinned boxes stay in place when you regenerate. You can still drag them. Pins work with the selected layout and are kept while this Flow view is open.",
+    "regenerateLayout": "Regenerate layout",
+    "togglePin": "Pin or unpin {{name}}"
   },
   "flowSettings": {
+    "seriesRouting": "Route materials in series",
+    "seriesRoutingHelp": "Send solid materials to the nearest unvisited consumer after layout, carrying only the remainder onward. Output share breaks distance ties. Dragging boxes updates the route. Outputs and surplus come last. Fluids and producer recycling keep direct links. This changes the diagram, not recipe inputs or the solve.",
+    "gridSnap": "Snap boxes to grid",
+    "gridSnapHelp": "One grid cell equals one box. Generated layouts and dragged boxes snap to separate cells. Enabling grid aligns existing pins too.",
+    "compactLayout": "Compact layout",
+    "compactLayoutHelp": "Pulls connected boxes close using forces, while preventing overlap. Boxes can touch, with empty spaces where forces balance or pins need room. Combine with grid snapping for a compact grid.",
     "diagram": "Visualization Type",
     "diagramTooltip": "Select which type of flow visualization to use",
     "elkAlgorithm": "Layout algorithm",
@@ -254,6 +275,10 @@
   "no": "No",
   "none": "None",
   "objectives": {
+    "wholeMachinesScale": "Factory scale: {{scale}}×. Objective quantities above show the scaled production.",
+    "wholeMachinesOutputOnly": "Exact ratio scaling requires Output objectives. Input, Limit and Maximize objectives set fixed capacities or optimization weights and cannot be expanded uniformly.",
+    "wholeMachines": "Exact whole-machine ratios",
+    "wholeMachinesHelp": "Scales the selected production plan to its smallest whole-machine expansion at full throughput, preserving all ratios. Recalculates when machines, modules, beacons, bonuses or objectives change. Iron ore, copper ore, stone, coal, water and crude oil are unlimited inputs. Exact ratios can require a large factory.",
     "displayRate": "Display rate units",
     "error": "No solution found",
     "errorDetail": "Check <b>Limit</b> and <b>Maximize</b> objectives and enabled recipes. ",
@@ -317,6 +342,7 @@
       "electric": "Electric"
     },
     "flowDiagram": {
+      "pcb": "PCB-style",
       "boxLine": "Box-line",
       "sankey": "Sankey"
     },

@@ -99,6 +99,27 @@ export class ObjectivesStore extends RecordStore<ObjectiveState> {
     return this.solver.solve(objectives, settings, data, paused, glpkAlgorithm);
   });
 
+  readonly displayObjectives = computed(() => {
+    const scale = this.matrixResult().objectiveScale;
+    return this.objectives().map((o) =>
+      scale ? spread(o, { value: o.value.mul(scale) }) : o,
+    );
+  });
+
+  /** Commit displayed quantities before an edit so other objectives keep their ratios. */
+  materializeObjectiveScale(): void {
+    const scale = this.matrixResult().objectiveScale;
+    if (scale == null || scale.isOne()) return;
+    this.set(
+      Object.fromEntries(
+        Object.entries(this.state()).map(([id, o]) => [
+          id,
+          spread(o, { value: o.value.mul(scale) }),
+        ]),
+      ),
+    );
+  }
+
   readonly steps = computed(() => {
     const result = this.matrixResult();
     const objectives = this.objectives();
@@ -723,7 +744,8 @@ export class ObjectivesStore extends RecordStore<ObjectiveState> {
   }
 
   setOrder(objectives: ObjectiveState[]): void {
-    this.set(this.reduceObjectives(objectives));
+    const state = this.state();
+    this.set(this.reduceObjectives(objectives.map((o) => state[o.id] ?? o)));
   }
 
   updateRecipeField<K extends keyof RecipeState>(

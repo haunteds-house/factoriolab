@@ -74,6 +74,59 @@ describe('ObjectivesStore', () => {
     });
   });
 
+  describe('whole-machine objective quantities', () => {
+    it('shows the scaled solve and keeps original ratios available when switched off', () => {
+      service.set({ [mockObjective5.id]: mockObjective5 });
+      spyOn(service, 'matrixResult').and.returnValue({
+        steps: [],
+        resultType: 'solved',
+        objectiveScale: rational(3),
+      });
+      expect(service.displayObjectives()[0].value).toEqual(rational(3));
+      expect(service.state()[mockObjective5.id].value).toEqual(rational.one);
+    });
+
+    it('shows original values if no expansion was calculated', () => {
+      service.set({ [mockObjective5.id]: mockObjective5 });
+      spyOn(service, 'matrixResult').and.returnValue({
+        steps: [],
+        resultType: 'solved',
+      });
+      expect(service.displayObjectives()[0].value).toEqual(rational.one);
+      service.materializeObjectiveScale();
+      expect(service.state()[mockObjective5.id].value).toEqual(rational.one);
+    });
+
+    it('commits all displayed objectives together before editing a quantity', () => {
+      service.set({ [mockObjective5.id]: mockObjective5 });
+      spyOn(service, 'matrixResult').and.returnValue({
+        steps: [],
+        resultType: 'solved',
+        objectiveScale: rational(3),
+      });
+      service.materializeObjectiveScale();
+      expect(service.state()[mockObjective5.id].value).toEqual(rational(3));
+    });
+
+    it('does not rewrite already whole objective quantities', () => {
+      service.set({ [mockObjective5.id]: mockObjective5 });
+      spyOn(service, 'matrixResult').and.returnValue({
+        steps: [],
+        resultType: 'solved',
+        objectiveScale: rational.one,
+      });
+      spyOn(service, 'set');
+      service.materializeObjectiveScale();
+      expect(service.set).not.toHaveBeenCalled();
+    });
+
+    it('reordering the displayed objectives preserves their underlying requested ratios', () => {
+      service.set({ [mockObjective5.id]: mockObjective5 });
+      service.setOrder([{ ...mockObjective5, value: rational(12) }]);
+      expect(service.state()['1'].value).toEqual(rational.one);
+    });
+  });
+
   describe('steps', () => {
     it('should normalize steps after solution is found', () => {
       spyOn(service['normalization'], 'normalizeSteps');

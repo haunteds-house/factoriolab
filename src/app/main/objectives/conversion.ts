@@ -22,6 +22,7 @@ export class Conversion {
   private readonly recipesStore = inject(RecipesStore);
 
   changeUnit(objective: ObjectiveSettings, unit: ObjectiveUnit): void {
+    this.objectivesStore.materializeObjectiveScale();
     const data = this.recipesStore.adjustedDataset();
     if (unit === ObjectiveUnit.Machines) {
       if (objective.unit !== ObjectiveUnit.Machines) {

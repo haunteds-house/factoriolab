@@ -11,6 +11,7 @@ export interface SettingsState {
   checkedObjectiveIds: Set<string>;
   maximizeType: MaximizeType;
   requireMachinesOutput: boolean;
+  wholeMachines: boolean;
   displayRate: DisplayRate;
   excludedItemIds: Set<string>;
   checkedItemIds: Set<string>;
@@ -47,6 +48,7 @@ export const initialSettingsState: SettingsState = {
   preset: Preset.Minimum,
   maximizeType: MaximizeType.Ratio,
   requireMachinesOutput: false,
+  wholeMachines: false,
   displayRate: DisplayRate.PerMinute,
   excludedItemIds: new Set(),
   checkedItemIds: new Set(),

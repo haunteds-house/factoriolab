@@ -19,4 +19,7 @@ export interface SimplexResult {
   time?: number;
   /** Total cost of solution */
   cost?: Rational;
+  /** Uniform expansion used by exact whole-machine mode. */
+  objectiveScale?: Rational;
+  wholeMachinesError?: 'output-only';
 }

@@ -83,6 +83,7 @@ const mockSettingsState: SettingsState = {
   checkedObjectiveIds: new Set(['1']),
   maximizeType: MaximizeType.Weight,
   requireMachinesOutput: false,
+  wholeMachines: false,
   displayRate: DisplayRate.PerHour,
   excludedItemIds: new Set([ItemId.SteelChest]),
   checkedItemIds: new Set([ItemId.SteelChest]),
@@ -203,9 +204,12 @@ const mockState: PartialState = {
   itemsState: mockItemsState,
   recipesState: mockRecipesState,
   machinesState: undefined,
-  settingsState: mockSettingsState,
+  settingsState: { ...mockSettingsState },
   tableState: undefined,
 };
+
+// URLs created before this option omit it; SettingsStore supplies the default.
+delete mockState.settingsState?.wholeMachines;
 
 const mockTableState: TableState = {
   filter: 'filter',
@@ -300,6 +304,29 @@ describe('RouterSync', () => {
         table: initialTableState,
       });
       expect(result).toEqual(mockZipData());
+    });
+
+    it('includes exact whole-machine mode in shared URLs and restores it', () => {
+      const result = service.zipState({
+        objectives: {},
+        items: {},
+        recipes: {},
+        machines: {},
+        settings: { ...initialSettingsState, wholeMachines: true },
+        data: service['settingsStore'].dataset(),
+        hash: mockModHash,
+        table: initialTableState,
+      });
+      expect(result?.config.bare.owm).toEqual(ZTRUE);
+      const restored = service.unzipSettings(
+        '2.0',
+        { owm: ZTRUE },
+        [],
+        [],
+        mockModData,
+        mockModHash,
+      );
+      expect(restored?.wholeMachines).toBeTrue();
     });
 
     it('should zip full state', () => {

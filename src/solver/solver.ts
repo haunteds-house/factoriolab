@@ -17,6 +17,11 @@ import {
   RecipeObjective,
 } from '~/state/objectives/objective';
 import { ObjectiveType } from '~/state/objectives/objective-type';
+import {
+  isPhysicalRecipe,
+  PRIMARY_RESOURCES,
+  wholeMachineScale,
+} from '~/state/objectives/whole-machines';
 import { GlpkAlgorithm } from '~/state/preferences/glpk-algorithm';
 import {
   CostKey,
@@ -51,13 +56,56 @@ export class Solver {
 
     if (objectives.length === 0) return { steps: [], resultType: 'skipped' };
 
+    if (settings.wholeMachines) {
+      if (objectives.some((o) => o.type !== ObjectiveType.Output))
+        return {
+          steps: [],
+          resultType: 'failed',
+          wholeMachinesError: 'output-only',
+        };
+      settings = spread(settings, {
+        excludedItemIds: new Set([
+          ...settings.excludedItemIds,
+          ...PRIMARY_RESOURCES.filter((id) => data.itemRecord[id] != null),
+        ]),
+      });
+    }
+
     // Get matrix state
     const state = this.getState(objectives, settings, data, glpkAlgorithm);
 
     // Get solution for matrix state
     const solution = this.getSolution(state);
 
+    let objectiveScale: Rational | undefined;
     if (solution.resultType === 'solved') {
+      if (settings.wholeMachines) {
+        const counts = [
+          ...Object.entries(solution.recipes)
+            .filter(([id]) => isPhysicalRecipe(state.recipes[id]))
+            .map(([, count]) => count),
+          ...state.recipeObjectives
+            .filter((o) => isPhysicalRecipe(o.recipe))
+            .map((o) => o.value),
+        ];
+        const scale = wholeMachineScale(counts);
+        objectiveScale = scale;
+        for (const record of [
+          solution.recipes,
+          solution.surplus,
+          solution.unproduceable,
+          solution.excluded,
+        ]) {
+          for (const id of Object.keys(record))
+            record[id] = record[id].mul(scale);
+        }
+        for (const item of Object.values(state.itemValues))
+          item.out = item.out.mul(scale);
+        state.recipeObjectives = state.recipeObjectives.map((o) =>
+          spread(o, { value: o.value.mul(scale) }),
+        );
+        solution.cost = solution.cost.mul(scale);
+      }
       // Update steps with solution
       this.updateSteps(solution, state);
     }
@@ -70,6 +118,7 @@ export class Solver {
       unboundedRecipeId: solution.unboundedRecipeId,
       time: solution.time,
       cost: solution.cost,
+      ...(objectiveScale ? { objectiveScale } : {}),
     };
   }
 

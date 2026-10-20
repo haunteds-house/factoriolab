@@ -10,6 +10,9 @@ export interface FlowSettings {
   sankeyAlign: SankeyAlign;
   hideExcluded: boolean;
   elkAlgorithm: ElkAlgorithm;
+  gridSnap: boolean;
+  compactLayout: boolean;
+  seriesRouting: boolean;
 }
 
 export const initialFlowSettings: FlowSettings = {
@@ -19,4 +22,7 @@ export const initialFlowSettings: FlowSettings = {
   sankeyAlign: SankeyAlign.Justify,
   hideExcluded: false,
   elkAlgorithm: 'layered',
+  gridSnap: false,
+  compactLayout: false,
+  seriesRouting: false,
 };

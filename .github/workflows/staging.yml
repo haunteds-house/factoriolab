@@ -1,42 +1,57 @@
-name: staging
+name: Fork preview
+
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [main, codex/pinned-flow-layouts]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
 jobs:
   build:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.repository == 'haunteds-house/factoriolab'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 'lts/*'
-          cache: 'npm'
+          node-version: '24'
+          cache: npm
 
-      - name: Use the package manager cache if available
-        uses: actions/cache@v5
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+      - uses: actions/configure-pages@v5
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run build
-        run: npm run build -- -c=production,staging
+      - name: Build preview
+        run: npm run build -- --base-href="/${{ github.event.repository.name }}/"
 
-      - name: Copy index to 404
+      - name: Support direct calculator links
         run: cp dist/factoriolab/browser/index.html dist/factoriolab/browser/404.html
 
-      - name: Deploy to GitHub Pages
-        uses: JamesIves/github-pages-deploy-action@v4
+      - uses: actions/upload-pages-artifact@v4
         with:
-          token: ${{ secrets.ACCESS_TOKEN }}
-          repository-name: factoriolab/staging
-          branch: main
-          folder: dist/factoriolab/browser
-          clean: true
+          path: dist/factoriolab/browser
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4

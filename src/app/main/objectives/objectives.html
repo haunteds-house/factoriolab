@@ -98,11 +98,7 @@
                 rounded="none"
                 [buttons]="true"
                 [ngModel]="objective.value"
-                (ngModelChange)="
-                  objectivesStore.updateRecord(objective.id, {
-                    value: $event,
-                  })
-                "
+                (ngModelChange)="changeQuantity(objective.id, $event)"
               ></lab-input-number>
               <lab-select
                 class="md:basis-1/5 -ms-px basis-1/3"
@@ -210,5 +206,28 @@
     </lab-form-field>
   </div>
 </div>
+
+<lab-checkbox
+  label="objectives.wholeMachines"
+  [ngModel]="settingsStore.settings().wholeMachines"
+  (ngModelChange)="settingsStore.apply({ wholeMachines: $event })"
+></lab-checkbox>
+@if (settingsStore.settings().wholeMachines) {
+  <p class="text-sm text-gray-300">
+    {{ 'objectives.wholeMachinesHelp' | translate }}
+  </p>
+  @if (result().objectiveScale; as scale) {
+    <p class="text-sm" aria-live="polite">
+      {{
+        'objectives.wholeMachinesScale' | translate: { scale: scale.toString() }
+      }}
+    </p>
+  }
+  @if (result().wholeMachinesError) {
+    <p class="text-sm text-red-400" role="alert">
+      {{ 'objectives.wholeMachinesOutputOnly' | translate }}
+    </p>
+  }
+}
 
 <lab-message [message]="objectivesStore.message()"></lab-message>

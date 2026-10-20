@@ -1,6 +1,14 @@
 import { boxEdgeLine, getIntersect, getOffset } from './box-line-edge';
 
 describe('boxEdgeLine', () => {
+  it('draws a default-direction link without a label override', () => {
+    expect(
+      boxEdgeLine(0)({
+        sourceNode: { id: 'a', x: 0, y: 0, width: 38, height: 38 },
+        targetNode: { id: 'b', x: 76, y: 0, width: 38, height: 38 },
+      } as any),
+    ).toEqual('M37,19L77,19');
+  });
   it('should handle forceLtr', () => {
     expect(
       boxEdgeLine(
