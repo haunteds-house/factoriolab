@@ -50,6 +50,19 @@ describe('FlowSettingsDialog', () => {
     expect(component['editValue']().compactLayout).toBeFalse();
   });
 
+  it('offers PCB placement and series controls while its routing grid is automatic', () => {
+    component.apply({ diagram: FlowDiagram.Pcb });
+    fixture.detectChanges();
+    expect(
+      fixture.debugElement.query(By.css('[label="flowSettings.gridSnap"]')),
+    ).toBeNull();
+    expect(
+      fixture.debugElement.query(
+        By.css('[label="flowSettings.seriesRouting"]'),
+      ),
+    ).not.toBeNull();
+  });
+
   describe('apply', () => {
     it('should update the editValue', () => {
       component.apply({ diagram: FlowDiagram.BoxLine });

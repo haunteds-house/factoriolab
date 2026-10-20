@@ -377,6 +377,62 @@ describe('Flow', () => {
       expect(data.links.every((l) => l.source === source)).toBeTrue();
     });
 
+    it('builds PCB traces on a mandatory routing grid and reroutes after moving a pinned footprint', async () => {
+      const data = mocks.flow();
+      data.links = data.links.map((l) => ({ ...l, beltCount: 3 }));
+      const settings = {
+        ...initialFlowSettings,
+        diagram: FlowDiagram.Pcb,
+        linkText: LinkValue.Belts,
+      };
+      await component.rebuildBoxLine(data, settings);
+      expect(component['pcbMetrics']()?.unrouted).toEqual(0);
+      expect(component['svg']?.selectAll('[data-pcb-trace]').size()).toEqual(
+        data.links.length,
+      );
+      expect(
+        component['svg']?.select('[data-box-grid-pattern]').attr('width'),
+      ).toEqual('38');
+      component.toggleNodePin(data.nodes[0].id);
+      const before = component['svg']?.select('[data-pcb-trace]').attr('d');
+      dragAndDropSelector(fixture, '[data-box-node]', 160, 90);
+      expect(
+        component['svg']?.select('[data-pcb-trace]').attr('d'),
+      ).not.toEqual(before);
+      expect(component['pcbMetrics']()?.unrouted).toEqual(0);
+      const pin = component['pinnedNodes']().get(data.nodes[0].id);
+      await component.rebuildBoxLine(data, settings);
+      expect(component['pinnedNodes']().get(data.nodes[0].id)).toEqual(pin);
+      await component.rebuildBoxLine(data, initialFlowSettings);
+      expect(component['pcbMetrics']()).toBeNull();
+      await component.rebuildBoxLine(data, {
+        ...settings,
+        linkText: LinkValue.Items,
+      });
+      expect(component['pcbMetrics']()?.unrouted).toEqual(0);
+    });
+
+    it('reports a PCB net that cannot be routed instead of drawing through footprints', async () => {
+      const data = mocks.flow();
+      data.links = [{ ...data.links[0], target: 'missing' }];
+      spyOn(component['elk'], 'layout').and.resolveTo({
+        children: data.nodes,
+        edges: [],
+        width: 100,
+        height: 100,
+      });
+      const settings = { ...initialFlowSettings, diagram: FlowDiagram.Pcb };
+      spyOn(component['preferencesStore'], 'flowSettings').and.returnValue(
+        settings,
+      );
+      await component.rebuildBoxLine(data, settings);
+      fixture.detectChanges();
+      expect(component['pcbMetrics']()?.unrouted).toEqual(1);
+      expect(
+        fixture.nativeElement.querySelector('[role="alert"]'),
+      ).not.toBeNull();
+    });
+
     it('should set selectedId when a rect is clicked', async () => {
       await component.rebuildBoxLine(mocks.flow(), initialFlowSettings);
       altClickSelector(fixture, '#lab-flow-svg svg svg');

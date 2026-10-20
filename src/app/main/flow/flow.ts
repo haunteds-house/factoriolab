@@ -39,6 +39,14 @@ import {
 import { BoxEdge, BoxNode } from '~/d3/box-line/models';
 import { num } from '~/d3/helpers';
 import {
+  pcbDropPosition,
+  PcbMetrics,
+  pcbViewBox,
+  placePcbBoxes,
+  routePcbTraces,
+  tracePath,
+} from '~/d3/pcb/pcb-routing';
+import {
   sankeyCenter,
   sankeyJustify,
   sankeyLeft,
@@ -99,6 +107,7 @@ export class Flow {
   protected readonly selectedId = signal<string | undefined>(undefined);
 
   protected readonly pinMode = signal(false);
+  protected readonly pcbMetrics = signal<PcbMetrics | null>(null);
   protected readonly pinnedNodes = signal<ReadonlyMap<string, BoxPosition>>(
     new Map(),
   );
@@ -111,6 +120,7 @@ export class Flow {
   private layoutVersion = 0;
   private layoutSeed = 1;
   private currentBoxViewBox: string | undefined;
+  private currentBoxDiagram: FlowDiagram | undefined;
   private readonly elk = new ELK();
   protected readonly faFileArrowDown = faFileArrowDown;
   protected readonly faGear = faGear;
@@ -137,7 +147,7 @@ export class Flow {
   protected exportFlow(flow: FlowData): void {
     const settings = this.preferencesStore.flowSettings();
     this.exporter.flowToJson(
-      settings.diagram === FlowDiagram.BoxLine && settings.seriesRouting
+      settings.diagram !== FlowDiagram.Sankey && settings.seriesRouting
         ? this.flowBuilder.seriesFlow(flow, this.boxPositions)
         : flow,
     );
@@ -148,6 +158,7 @@ export class Flow {
     flowSettings: FlowSettings,
   ): Promise<void> {
     if (flowData == null) {
+      this.pcbMetrics.set(null);
       this.layoutVersion++;
       this.layoutPending.set(false);
       select(`#${SVG_ID} > *`).remove();
@@ -155,6 +166,7 @@ export class Flow {
     }
 
     if (flowSettings.diagram === FlowDiagram.Sankey) {
+      this.pcbMetrics.set(null);
       this.layoutVersion++;
       this.layoutPending.set(false);
       this.layoutError.set(false);
@@ -510,6 +522,7 @@ export class Flow {
     flow: FlowData,
     flowSettings: FlowSettings,
   ): Promise<void> {
+    const pcb = flowSettings.diagram === FlowDiagram.Pcb;
     const version = ++this.layoutVersion;
     const ids = new Set(flow.nodes.map((n) => n.id));
     const pins = new Map([...this.pinnedNodes()].filter(([id]) => ids.has(id)));
@@ -547,9 +560,10 @@ export class Flow {
       boxes,
       flow,
       pins,
-      flowSettings.gridSnap,
+      !pcb && flowSettings.gridSnap,
       flowSettings.compactLayout,
     );
+    if (pcb) placePcbBoxes(boxes, pins);
     this.pinnedNodes.set(new Map(pins));
     this.boxPositions.clear();
     for (const box of boxes) {
@@ -573,6 +587,24 @@ export class Flow {
         }),
     );
 
+    let pcbRouting = pcb ? routePcbTraces(boxes, edges) : null;
+    if (
+      pcbRouting &&
+      (!pins.size || this.currentBoxDiagram !== flowSettings.diagram)
+    )
+      this.currentBoxViewBox = pcbViewBox(boxes, pcbRouting);
+    this.currentBoxDiagram = flowSettings.diagram;
+    this.pcbMetrics.set(pcbRouting?.metrics ?? null);
+    const edgePath = (
+      e: BoxEdge,
+      offset: number,
+      ltr = false,
+    ): string | null =>
+      pcbRouting
+        ? tracePath(pcbRouting.routes[e.id].points, ltr)
+        : boxEdgeLine(offset, ltr)(e);
+    const drawBelts = (e: BoxEdge): ReturnType<typeof beltLines> =>
+      beltLines(e, pcbRouting?.routes[e.id].points);
     const svg = select(this.svgElement().nativeElement)
       .append('svg')
       .attr('viewBox', this.currentBoxViewBox)
@@ -584,7 +616,7 @@ export class Flow {
     );
     svg.call(zoomBehavior);
 
-    if (flowSettings.gridSnap) {
+    if (flowSettings.gridSnap || pcb) {
       const [x, y, width, height] = this.currentBoxViewBox
         .split(' ')
         .map(Number);
@@ -619,7 +651,7 @@ export class Flow {
       .selectAll('g')
       .data(edges)
       .join('g')
-      .attr('class', 'mix-blend-multiply')
+      .attr('class', pcb ? 'pcb-trace' : 'mix-blend-multiply')
       .attr('data-flow-link', (e) => e.itemId ?? '')
       .attr('data-source', (e) => e.source)
       .attr('data-target', (e) => e.target);
@@ -650,8 +682,24 @@ export class Flow {
       string,
       ReturnType<typeof beltLines>
     > = Object.fromEntries(
-      edges.filter(useBeltLines).map((e) => [e.id, beltLines(e)]),
+      edges.filter(useBeltLines).map((e) => [e.id, drawBelts(e)]),
     );
+    const halo = edge
+      .filter(() => pcb)
+      .append('path')
+      .attr('data-pcb-trace', '')
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--color-ground-950)')
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-linecap', 'round');
+    const updateHalo = (): void => {
+      halo
+        .attr('d', (e) => edgePath(e, 5))
+        .attr('stroke-width', (e) =>
+          useBeltLines(e) ? beltLayouts[e.id].span + 3 : 5,
+        );
+    };
+    updateHalo();
     const beltPath = edge
       .filter(useBeltLines)
       .attr('data-belt-count', (e) => num(e.beltCount))
@@ -678,14 +726,14 @@ export class Flow {
 
     const path = edge
       .append('path')
-      .attr('d', (e) => boxEdgeLine(5)(e))
+      .attr('d', (e) => edgePath(e, 5))
       .attr('stroke', (e) => e.color)
       .attr('stroke-width', (e) => (useBeltLines(e) ? 0 : 2))
       .attr('marker-end', (e) => `url(#arrow-${e.id})`);
     const textPath = edge
       .append('path')
       .attr('id', (e) => e.id)
-      .attr('d', (e) => boxEdgeLine(0, true)(e));
+      .attr('d', (e) => edgePath(e, 0, true));
 
     const linkLabel = (e: BoxEdge): string =>
       useBeltLines(e)
@@ -721,8 +769,12 @@ export class Flow {
           });
         });
       }
+      if (pcb) {
+        pcbRouting = routePcbTraces(boxes, edges);
+        this.pcbMetrics.set(pcbRouting.metrics);
+      }
       edges.filter(useBeltLines).forEach((e) => {
-        beltLayouts[e.id] = beltLines(e);
+        beltLayouts[e.id] = drawBelts(e);
       });
       edge
         .attr('data-source', (e) => e.source)
@@ -731,11 +783,12 @@ export class Flow {
         .filter(useBeltLines)
         .attr('data-belt-count', (e) => num(e.beltCount))
         .attr('data-belts-per-line', (e) => beltLayouts[e.id].multiplier);
+      updateHalo();
       beltPath
         .attr('d', (e) => beltLayouts[e.id].path)
         .attr('stroke-width', (e) => beltLayouts[e.id].width);
-      path.attr('d', (e) => boxEdgeLine(5)(e));
-      textPath.attr('d', (e) => boxEdgeLine(0, true)(e));
+      path.attr('d', (e) => edgePath(e, 5));
+      textPath.attr('d', (e) => edgePath(e, 0, true));
       labels.text(linkLabel);
       titles.text(describeLink);
     };
@@ -750,15 +803,22 @@ export class Flow {
       }
     };
     const dropPosition = (d: BoxNode, desired: BoxPosition): BoxPosition =>
-      flowSettings.gridSnap || flowSettings.compactLayout
-        ? boxDropPosition(
+      pcb
+        ? pcbDropPosition(
             desired,
             boxes
               .filter((b) => b.id !== d.id)
               .map((b) => ({ x: num(b.x), y: num(b.y) })),
-            flowSettings.gridSnap,
           )
-        : desired;
+        : flowSettings.gridSnap || flowSettings.compactLayout
+          ? boxDropPosition(
+              desired,
+              boxes
+                .filter((b) => b.id !== d.id)
+                .map((b) => ({ x: num(b.x), y: num(b.y) })),
+              flowSettings.gridSnap,
+            )
+          : desired;
     // Main node svg
     const node = svg
       .append('g')

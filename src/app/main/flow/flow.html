@@ -59,19 +59,41 @@
 }
 
 @if (
-  preferencesStore.flowSettings().diagram === FlowDiagram.BoxLine &&
+  preferencesStore.flowSettings().diagram !== FlowDiagram.Sankey &&
   preferencesStore.flowSettings().linkText === LinkValue.Belts
 ) {
   <p class="text-sm text-gray-400">{{ 'flow.beltLinesHelp' | translate }}</p>
 }
 
 @if (
-  preferencesStore.flowSettings().diagram === FlowDiagram.BoxLine &&
+  preferencesStore.flowSettings().diagram !== FlowDiagram.Sankey &&
   preferencesStore.flowSettings().seriesRouting
 ) {
   <p class="text-sm text-gray-400">
     {{ 'flow.seriesRoutingHelp' | translate }}
   </p>
+}
+
+@if (preferencesStore.flowSettings().diagram === FlowDiagram.Pcb) {
+  <p class="text-sm text-gray-400">{{ 'flow.pcbHelp' | translate }}</p>
+  @if (pcbMetrics(); as stats) {
+    <p class="text-sm" aria-live="polite">
+      {{
+        'flow.pcbStats'
+          | translate
+            : {
+                length: (stats.length / 38).toFixed(1),
+                bends: stats.bends,
+                crossings: stats.crossings,
+              }
+      }}
+    </p>
+    @if (stats.unrouted) {
+      <p class="text-sm text-red-400" role="alert">
+        {{ 'flow.pcbUnrouted' | translate: { count: stats.unrouted } }}
+      </p>
+    }
+  }
 }
 
 <div

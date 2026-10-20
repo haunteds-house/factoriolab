@@ -1,14 +1,19 @@
-import { curveBasis, curveNatural, line } from 'd3';
+import { curveBasis, curveLinear, curveNatural, line } from 'd3';
 
 import { num } from '../helpers';
+import { offsetTrace, Point } from '../pcb/pcb-routing';
 import { getArcPoint } from './box-line-edge';
 import { BoxEdge } from './models';
 
 /** One SVG path keeps even large belt counts from creating thousands of DOM nodes. */
-export function beltLines(edge: BoxEdge): {
+export function beltLines(
+  edge: BoxEdge,
+  routedPoints?: Point[],
+): {
   path: string;
   width: number;
   multiplier: number;
+  span: number;
 } {
   const count = edge.beltCount ?? 0;
   // Extremely large factories still render promptly; grouping is always labelled.
@@ -45,9 +50,16 @@ export function beltLines(edge: BoxEdge): {
     points = [source, getArcPoint(source, target, edge.sourceNode), target];
     generator.curve(curveNatural);
   }
+  if (routedPoints) {
+    points = routedPoints;
+    generator.curve(curveLinear);
+  }
+  const width = Math.min(1.5, gap * 0.55);
   return {
+    span: lanes ? (lanes - 1) * gap + width : 0,
     path: Array.from({ length: lanes }, (_, i) => {
       const offset = (i - (lanes - 1) / 2) * gap;
+      if (routedPoints) return generator(offsetTrace(points, offset));
       return generator(
         points.map(([x, y]): [number, number] => [
           x + normal[0] * offset,
@@ -55,7 +67,7 @@ export function beltLines(edge: BoxEdge): {
         ]),
       );
     }).join(''),
-    width: Math.min(1.5, gap * 0.55),
+    width,
     multiplier,
   };
 }

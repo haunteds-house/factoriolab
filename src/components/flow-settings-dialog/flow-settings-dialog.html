@@ -55,13 +55,15 @@
       [ngModel]="editValue().seriesRouting"
       (ngModelChange)="apply({ seriesRouting: $event })"
     ></lab-checkbox>
-    <lab-checkbox
-      label="flowSettings.gridSnap"
-      labTooltip="flowSettings.gridSnapHelp"
-      labTooltipPosition="adjacent"
-      [ngModel]="editValue().gridSnap"
-      (ngModelChange)="apply({ gridSnap: $event })"
-    ></lab-checkbox>
+    @if (editValue().diagram === FlowDiagram.BoxLine) {
+      <lab-checkbox
+        label="flowSettings.gridSnap"
+        labTooltip="flowSettings.gridSnapHelp"
+        labTooltipPosition="adjacent"
+        [ngModel]="editValue().gridSnap"
+        (ngModelChange)="apply({ gridSnap: $event })"
+      ></lab-checkbox>
+    }
     <lab-checkbox
       label="flowSettings.compactLayout"
       labTooltip="flowSettings.compactLayoutHelp"
